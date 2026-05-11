@@ -1,9 +1,6 @@
-# 替換為你的真實域名，例如 ai-finance.yourdomain.com
-# 如果你還沒有域名，可以先寫你的 VPS 伺服器 IP (但 IP 無法自動配置 HTTPS)
-# example.com {
-
-# 這裡先預設為透過環境變數或直接修改。如果你有域名，請把 {$DOMAIN} 改成你的域名
-{$DOMAIN} {
+# 部署到沒有域名的伺服器 (使用 IP 訪問)
+# 例如: http://你的伺服器IP
+:80 {
     # 壓縮
     encode zstd gzip
 

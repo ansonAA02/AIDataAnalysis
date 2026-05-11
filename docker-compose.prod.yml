@@ -56,14 +56,13 @@ services:
     depends_on:
       - backend
 
-  # Caddy 作為反向代理和自動 HTTPS 證書管理
+  # Caddy 作為反向代理
   caddy:
     image: caddy:2.8-alpine
     container_name: ai-finance-caddy
     restart: always
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
