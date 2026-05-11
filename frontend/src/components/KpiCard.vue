@@ -11,6 +11,11 @@ const props = defineProps<{
   to?: RouteLocationRaw;
   icon?: string;
 }>();
+
+const getIcon = (name?: string) => {
+  if (!name) return null;
+  return (icons as Record<string, any>)[name];
+};
 </script>
 
 <template>
@@ -22,7 +27,7 @@ const props = defineProps<{
   >
     <div class="kpi-card__header">
       <p class="kpi-card__label">{{ label }}</p>
-      <component v-if="icon && icons[icon]" :is="icons[icon]" class="kpi-card__icon" :size="18" />
+      <component v-if="icon && getIcon(icon)" :is="getIcon(icon)" class="kpi-card__icon" :size="18" />
     </div>
     <strong class="kpi-card__value">{{ value }}</strong>
     <span class="kpi-card__meta">{{ meta }}</span>

@@ -55,7 +55,7 @@ const { chartRef, renderChart } = useECharts((echarts) => {
         labelLine: { show: false },
         data: props.data.map((d, i) => ({
           value: d.revenue,
-          name: d.lineName,
+          name: d.businessLine,
           itemStyle: { color: colors[i % colors.length] }
         }))
       }
