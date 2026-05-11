@@ -104,6 +104,12 @@ class AiAnalysisServiceTest {
             return response;
         }
 
+        @Override
+        public reactor.core.publisher.Flux<String> askStream(AiAnalysisContext context) {
+            this.context.set(context);
+            return reactor.core.publisher.Flux.just(response.conclusion());
+        }
+
         private AiAnalysisContext context() {
             return context.get();
         }
