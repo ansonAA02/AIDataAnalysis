@@ -1,0 +1,19 @@
+# 替換為你的真實域名，例如 ai-finance.yourdomain.com
+# 如果你還沒有域名，可以先寫你的 VPS 伺服器 IP (但 IP 無法自動配置 HTTPS)
+# example.com {
+
+# 這裡先預設為透過環境變數或直接修改。如果你有域名，請把 {$DOMAIN} 改成你的域名
+{$DOMAIN} {
+    # 壓縮
+    encode zstd gzip
+
+    # 前端靜態文件代理
+    handle /* {
+        reverse_proxy frontend:80
+    }
+
+    # 後端 API 代理 (加上 /api 前綴的請求轉發給 Spring Boot)
+    handle /api/* {
+        reverse_proxy backend:8080
+    }
+}
