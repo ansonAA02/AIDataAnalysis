@@ -4,9 +4,9 @@
 
 **Goal:** 基于《AI 企业财务经营数据分析决策平台设计文档》渐进开发一个 Spring Boot + Vue + MySQL 的财务经营分析 MVP。
 
-**Architecture:** 后端使用 Spring Boot 提供财务指标、Dashboard、真实 AI 分析、预算偏差和经营报告 API；前端使用 Vue 构建驾驶舱、AI 分析页、预算偏差页和经营报告页；MySQL 只存储内置示例数据。系统启动时通过 SQL 初始化脚本写入 12 个月完整示例财务数据，包括收入、成本、毛利、净利、现金流、预算值和业务线数据，保证首次运行即可展示完整 Dashboard。AI 第一版直接接入 DeepSeek 真实 AI，后端通过 `AiProvider` 接口隔离具体模型供应商，默认使用 OpenAI-compatible HTTP Provider，`base_url=https://api.deepseek.com`，`model=deepseek-v4-pro`，API Key 从 `DEEPSEEK_API_KEY` 环境变量读取，并启用 high reasoning 与 thinking。
+**Architecture:** 后端使用 Spring Boot 提供财务指标、Dashboard、真实 AI 分析、预算偏差和经营报告 API；前端使用 Vue 构建驾驶舱、AI 分析页、预算偏差页和经营报告页；MySQL 只存储内置示例数据。系统启动时通过 SQL 初始化脚本写入 12 个月完整示例财务数据，包括收入、成本、毛利、净利、现金流、预算值和业务线数据，保证首次运行即可展示完整 Dashboard。AI 第一版直接接入 DeepSeek 真实 AI：业务代码通过 `AiProvider` 接口隔离供应商；**实现上采用 Spring AI 的 `ChatModel` + `OpenAiChatOptions`（OpenAI-compatible）**，由 `spring-ai-starter-model-openai` 发起 `/chat/completions` 调用；默认 `base_url=https://api.deepseek.com`，`model=deepseek-v4-pro`，API Key 主要来自 `DEEPSEEK_API_KEY`；`reasoning_effort=high` 与 `extraBody` 中的 `thinking.type=enabled` 由 `OpenAiCompatibleAiProvider` 与 `AiProperties` 配置（与计划初稿中的「手写 HTTP + OpenAiChatRequest DTO」不同，以仓库为准）。
 
-**Tech Stack:** Spring Boot, Java, Maven, MySQL, Vue, Vite, TypeScript, ECharts, Axios, Vitest, JUnit, OpenAI-compatible AI API.
+**Tech Stack:** Spring Boot **3.4.5**，Java **21**，Maven，Spring Data JPA，**Spring AI 1.1.6**（`spring-ai-starter-model-openai`），MySQL，Vue 3，Vite，TypeScript，ECharts，Axios，Vitest，JUnit 5；可选 **Docker Compose**（MySQL 8.4，宿主机映射默认 **3307**）用于本地联调。
 
 ---
 
@@ -35,6 +35,8 @@ AI 回答统一返回结构化内容，包含：
 - 原因分析
 - 风险提示
 - 建议动作
+
+**序列化约定：** HTTP JSON 字段为英文 **`conclusion`、`evidence`、`analysis`、`risk`、`recommendation`**，与上列中文语义一一对应（见 `AiAnswerResponse` / 前端 `AiAnswer` 类型）。
 
 ### 0.4 风险等级与风险类型
 
@@ -80,15 +82,19 @@ MVP 范围整体清晰，核心边界明确：
 
 这些边界适合 MVP，可以避免一开始陷入数据导入、权限系统和复杂 BI 的开发成本。真实 AI 接入只做后端 Provider 层和结构化回答，不扩展到复杂 Agent、工具调用或长期记忆。
 
-### 1.2 可能遗漏的内容
+### 1.2 可能遗漏的内容（初稿审查记录 → 当前仓库状态）
 
-- 缺少明确项目结构：需要定义 `backend/` 和 `frontend/` 的目录边界。
-- 缺少 API 响应格式约定：建议统一返回 `code`、`message`、`data`，便于前端处理错误。
-- 缺少示例数据范围：建议第一版准备最近 12 个月的月度数据，并通过 `schema.sql` 与 `data.sql` 在系统首次启动时初始化，支持趋势图、环比、预算偏差、业务线展示和报告生成。
-- 缺少财务指标枚举：需要固定 `REVENUE`、`COST`、`GROSS_PROFIT`、`NET_PROFIT`、`OPERATING_CASH_FLOW` 等指标编码。
-- 缺少 AI 问答范围：需要限制第一版只支持常见问题意图匹配，不能做开放式自由推理。
-- 缺少 Provider 替换边界：需要单独定义 `AiProvider` 接口和 `OpenAiCompatibleAiProvider` 实现，避免真实 AI 调用逻辑散落在 Controller 或页面里。
-- 缺少前端状态处理：需要规划 loading、empty、error、success 四类基础状态。
+以下为早期需求审查时的「担忧清单」。**截至文档同步，多数已在代码中闭环；未闭环项见 §7「已知差异与后续增强」。**
+
+| 初稿关切 | 当前仓库状态 |
+|----------|----------------|
+| `backend/`、`frontend/` 目录边界 | 已建立 |
+| 统一 API 响应 `code`、`message`、`data` | 已实现 `ApiResponse` + `ErrorCode` |
+| 12 个月示例数据 + `schema.sql` / `data.sql` 启动初始化 | 已实现；`data.sql` 可为 `optional:classpath:` |
+| 财务指标枚举 | 已实现 `MetricCode`：`REVENUE`、`COST`、`GROSS_PROFIT`、**`OPERATING_EXPENSE`**、`NET_PROFIT`、`OPERATING_CASH_FLOW`（初稿 bullet 未单独写经营费用） |
+| `AiProvider` 与独立 Provider 实现 | 已实现；调用走 **Spring AI `ChatModel`**（见 §2.3） |
+| 前端 loading / error 等基础状态 | 各页具备 loading、error、success；**empty 态未体系统一规范**（可按页增强） |
+| 「仅常见问题意图匹配、不做开放式推理」 | **与当前实现不完全一致**：`POST /api/ai/ask` 与 **`GET /api/ai/suggestions`** 均为 **单轮真实模型调用**，**无**服务端意图路由或模板假回答；suggestions 实为 **对模型返回 `recommendation` 按行拆分**（见 §7） |
 
 ### 1.3 可能矛盾的地方
 
@@ -138,12 +144,14 @@ MVP 范围整体清晰，核心边界明确：
 - `backend/src/main/java/com/aifinance/AiFinanceApplication.java`：Spring Boot 启动类。
 - `backend/src/main/java/com/aifinance/common/ApiResponse.java`：统一 API 响应。
 - `backend/src/main/java/com/aifinance/common/ErrorCode.java`：错误码。
+- `backend/src/main/java/com/aifinance/common/HealthController.java`：健康检查。
+- `backend/src/main/java/com/aifinance/common/WebConfig.java`：CORS（`app.cors.allowed-origins`）。
 - `backend/src/main/java/com/aifinance/finance/domain/*`：财务实体和枚举。
 - `backend/src/main/java/com/aifinance/finance/repository/*`：数据访问。
 - `backend/src/main/java/com/aifinance/finance/service/*`：财务分析服务。
 - `backend/src/main/java/com/aifinance/dashboard/controller/*`：Dashboard API。
 - `backend/src/main/java/com/aifinance/ai/controller/*`：AI 分析 API。
-- `backend/src/main/java/com/aifinance/ai/provider/*`：AI Provider 接口与 OpenAI-compatible 真实 AI 实现。
+- `backend/src/main/java/com/aifinance/ai/provider/*`：AI Provider 接口与 **Spring AI `ChatModel`** 驱动的 OpenAI-compatible 实现。
 - `backend/src/main/java/com/aifinance/report/controller/*`：经营报告 API。
 - `backend/src/test/java/com/aifinance/*`：后端测试。
 
@@ -166,6 +174,26 @@ MVP 范围整体清晰，核心边界明确：
 - `frontend/src/views/ReportView.vue`：经营报告页。
 - `frontend/src/components/*`：KPI 卡片、趋势图、风险列表、报告区块等组件。
 - `frontend/src/__tests__/*`：前端测试。
+- `frontend/src/styles.css`：全局样式入口（与 `theme.css` 并存时以实际引用为准）。
+- `frontend/src/views/HomeView.vue`：欢迎页（路由 **`/welcome`**）。
+- `.env.example`、`frontend/.env.example`：环境变量说明（如 `DEEPSEEK_API_KEY`、`VITE_API_BASE_URL`）。
+- `docker-compose.yml`：本地 MySQL（默认宿主 **3307**）及可选 `dev` profile 开发容器。
+
+### 2.3 仓库中已存在、与上文初稿路径或命名不一致的实现（以代码为准）
+
+以下条目在 `AIDataAnalysis` 当前代码中已落地，**本文档后续模块与 Step 描述已按此对齐**：
+
+| 计划初稿 | 实际仓库 |
+|----------|----------|
+| `AiQuestionRequest` | `AiAskRequest`（`record`，字段 `periodId`、`question`） |
+| `AiSummaryResponse` | **未单独建类**；`GET /api/ai/summary` 与问答一致，统一返回 `AiAnswerResponse`（`conclusion`、`evidence`、`analysis`、`risk`、`recommendation`） |
+| `OpenAiChatRequest.java` / `OpenAiChatResponse.java` | **未使用**；调用链为 Spring AI `ChatModel.call(Prompt)` |
+| 仅 `application.yml` 中自定义 `ai.*` | 同时存在 **`spring.ai.openai.*`**（API Key、base-url、model）与 **`ai.deepseek.*`**（`AiProperties`：`model`、`reasoning-effort`、`thinking-enabled`）；Provider 侧使用 `AiProperties` 组装 `OpenAiChatOptions` |
+| `data.sql` 必执行 | `spring.sql.init.data-locations` 为 **`optional:classpath:db/data.sql`**（缺文件时启动不失败） |
+| 默认 MySQL 端口 | 本地 JDBC 默认 **`localhost:3307`**（与 `docker-compose.yml` 中 `MYSQL_PORT` 默认一致） |
+| 根路径首页 | 路由 **`/` → `DashboardView`**；**`/welcome` → `HomeView`**（欢迎页，侧栏「欢迎」） |
+| CORS | 独立 `com.aifinance.common.WebConfig`，使用 `app.cors.allowed-origins` |
+| 预算 AI 解释 | `AiAnalysisService.budgetExplanation(periodId)`；`BudgetController` 返回 `BudgetExplanationResponse(periodId, AiAnswerResponse)` |
 
 ---
 
@@ -175,7 +203,7 @@ MVP 范围整体清晰，核心边界明确：
 
 **目标**
 
-建立可运行的前后端项目骨架和 MySQL 初始化机制，不实现业务逻辑。后端启动配置必须支持自动执行 `schema.sql` 和 `data.sql`，使首次运行即可创建表并写入完整示例数据。
+建立可运行的前后端项目骨架和 MySQL 初始化机制，不实现业务逻辑。后端启动配置必须自动执行 **`schema.sql`**；**`data.sql`** 在 Step 4 落地后通过初始化加载（亦可配置为 **`optional:`** 以便 Step 3 阶段无数据文件仍能启动）。
 
 **涉及的前端文件**
 
@@ -195,6 +223,8 @@ MVP 范围整体清晰，核心边界明确：
 - 新增：`backend/src/main/resources/db/data.sql`
 - 新增：`backend/src/main/java/com/aifinance/common/ApiResponse.java`
 - 新增：`backend/src/main/java/com/aifinance/common/ErrorCode.java`
+- 新增：`backend/src/main/java/com/aifinance/common/HealthController.java`
+- 新增：`backend/src/main/java/com/aifinance/common/WebConfig.java`
 
 **涉及的数据表**
 
@@ -353,7 +383,7 @@ MVP 范围整体清晰，核心边界明确：
 
 **目标**
 
-直接接入 DeepSeek 真实 AI，使用提示词模板约束回答结构，同时通过可替换的 `AiProvider` 接口隔离具体模型供应商。第一版默认实现 OpenAI-compatible HTTP Provider，默认 base URL 为 `https://api.deepseek.com`，默认模型为 `deepseek-v4-pro`，API Key 从 `DEEPSEEK_API_KEY` 环境变量读取，请求体启用 `reasoning_effort=high` 和 `extra_body.thinking.type=enabled`。
+直接接入 DeepSeek 真实 AI，使用提示词模板约束回答结构，同时通过可替换的 `AiProvider` 接口隔离具体模型供应商。**实现为 Spring AI `ChatModel` + `OpenAiCompatibleAiProvider`**（内部 `OpenAiChatOptions`：`model`、`reasoningEffort`、`extraBody` 中的 `thinking`），默认 base URL 为 `https://api.deepseek.com`，默认模型为 `deepseek-v4-pro`，API Key 由 `spring.ai.openai.api-key` / `DEEPSEEK_API_KEY` 等环境变量注入；`reasoning_effort=high` 与 thinking 开关由 `AiProperties`（`ai.deepseek.reasoning-effort`、`ai.deepseek.thinking-enabled`）控制。
 
 **涉及的前端文件**
 
@@ -362,15 +392,16 @@ MVP 范围整体清晰，核心边界明确：
 
 **涉及的后端文件**
 
+- 新增：`backend/pom.xml` 中 **Spring AI BOM** 与 **`spring-ai-starter-model-openai`** 依赖（与手写 RestClient 方案二选一，当前仓库为 Spring AI）。
 - 新增：`backend/src/main/java/com/aifinance/ai/provider/AiProvider.java`
 - 新增：`backend/src/main/java/com/aifinance/ai/provider/OpenAiCompatibleAiProvider.java`
-- 新增：`backend/src/main/java/com/aifinance/ai/config/AiProperties.java`
-- 新增：`backend/src/main/java/com/aifinance/ai/service/AiAnalysisService.java`
+- 新增：`backend/src/main/java/com/aifinance/ai/config/AiProperties.java`（`@ConfigurationProperties(prefix = "ai.deepseek")`，由 `@ConfigurationPropertiesScan` 扫描）
+- 新增：`backend/src/main/java/com/aifinance/ai/service/AiAnalysisService.java`（含 `summary`、`ask`、`suggestions`、**`budgetExplanation`**）
 - 新增：`backend/src/main/java/com/aifinance/ai/controller/AiAnalysisController.java`
 - 新增：`backend/src/main/java/com/aifinance/ai/dto/AiAnalysisContext.java`
-- 新增：`backend/src/main/java/com/aifinance/ai/dto/AiQuestionRequest.java`
-- 新增：`backend/src/main/java/com/aifinance/ai/dto/AiAnswerResponse.java`
-- 新增：`backend/src/main/java/com/aifinance/ai/dto/AiSummaryResponse.java`
+- 新增：`backend/src/main/java/com/aifinance/ai/dto/AiAskRequest.java`（替代初稿中的 `AiQuestionRequest`）
+- 新增：`backend/src/main/java/com/aifinance/ai/dto/AiAnswerResponse.java`（摘要与问答共用，替代初稿中单独的 `AiSummaryResponse`）
+- 不新增：`OpenAiChatRequest` / `OpenAiChatResponse`（由 Spring AI 封装 HTTP 请求/响应）
 - 新增：`backend/src/test/java/com/aifinance/ai/provider/OpenAiCompatibleAiProviderTest.java`
 - 新增：`backend/src/test/java/com/aifinance/ai/service/AiAnalysisServiceTest.java`
 
@@ -385,17 +416,17 @@ MVP 范围整体清晰，核心边界明确：
 
 - `GET /api/ai/summary?periodId={periodId}`
 - `POST /api/ai/ask`
-- `GET /api/ai/suggestions?periodId={periodId}`
+- `GET /api/ai/suggestions?periodId={periodId}`（实现为 **模型生成建议 + 拆分 `recommendation` 行**，详见 **§7.2**。）
 
 **测试或验证方式**
 
-- 测试固定问题“为什么本月利润下降？”会携带当前期间财务上下文调用 `AiProvider`。
-- 使用 mock HTTP server 测试 `OpenAiCompatibleAiProvider` 请求格式、鉴权头、模型名和响应解析。
-- 测试默认配置指向 DeepSeek：base URL 为 `https://api.deepseek.com`，model 为 `deepseek-v4-pro`，API Key 环境变量名为 `DEEPSEEK_API_KEY`。
-- 测试请求体包含 `reasoning_effort=high` 和 `extra_body.thinking.type=enabled`。
-- 测试 AI 回答结构包含结论、数据依据、原因分析、风险提示、建议动作。
-- 测试真实 AI 调用失败时返回明确错误，不伪造模板答案。
-- 验证 Controller 只依赖 `AiAnalysisService`，不直接调用模型 API。
+- 测试固定问题“为什么本月利润下降？”会携带当前期间财务上下文调用 `AiProvider`（经 `AiAnalysisService`）。
+- **单元测试**：Mock **`ChatModel`** 与 `Prompt`，断言 `OpenAiChatOptions` 中 `model`、`reasoningEffort`、`extraBody`（thinking）及 Prompt 内容；**不要求**自建 mock HTTP 服务器（除非做契约/集成测试）。
+- 测试默认配置指向 DeepSeek：base URL 为 `https://api.deepseek.com`，model 为 `deepseek-v4-pro`，API Key 环境变量名为 `DEEPSEEK_API_KEY`（另可由 `spring.ai.openai` 绑定）。
+- 测试选项包含 `reasoningEffort=high` 与 `extraBody` 中的 `thinking -> type -> enabled`（与 Spring AI 序列化一致；若 DeepSeek 变更字段以官方文档为准）。
+- 测试 AI 回答结构包含结论、数据依据、原因分析、风险提示、建议动作（JSON 字段映射到 `AiAnswerResponse`）。
+- 测试 Provider 在解析失败或底层异常时抛出明确错误，不伪造模板答案。
+- 验证 Controller 只依赖 `AiAnalysisService`，不直接调用 `ChatModel`。
 
 ---
 
@@ -482,6 +513,7 @@ MVP 范围整体清晰，核心边界明确：
 - 接口 loading 时显示加载状态。
 - 接口失败时显示错误提示。
 - 用户可以跳转到 AI 分析页、预算偏差页、经营报告页。
+- **已知差异（MVP）：** 当前前端 **`DashboardView`** 使用固定 **`periodId`（代码中为常量 4）** 拉取数据，**未**像 `ReportView` 一样提供 `PeriodSelector`；与「全站任意页切换期间」的完整体验有差距，见 **§7**。
 
 ---
 
@@ -513,15 +545,16 @@ MVP 范围整体清晰，核心边界明确：
 **主要接口**
 
 - `POST /api/ai/ask`
-- `GET /api/ai/suggestions?periodId={periodId}`
+- `GET /api/ai/suggestions?periodId={periodId}`（**实现说明**：后端再次调用模型生成「决策建议」文本，并将返回中的 **`recommendation` 按行拆成 `List<String>`**，**不是**固定问题模板或意图规则引擎。）
 
 **测试或验证方式**
 
 - 点击快捷问题能得到回答。
-- 输入未知问题能得到稳定兜底回答。
+- **未知 / 离题问题：** 仍走真实模型单轮回答；**无**单独后端模板兜底。若请求失败或网络错误，前端展示通用错误提示；若模型返回非约定 JSON，Provider 侧抛错（见 **§7**）。
 - 回答内容展示指标引用、原因拆解和建议动作。
-- 回答内容按结论、数据依据、原因分析、风险提示、建议动作展示。
+- 回答内容按结论、数据依据、原因分析、风险提示、建议动作展示（字段名见 **§0.3**）。
 - 前端不保存或展示 API Key，真实 AI 配置只存在后端环境变量中。
+- **已知差异：** `AiAnalysisView` 与 **`BudgetVarianceView`** 同样写死默认 **`periodId`**，未提供期间选择器。
 
 ---
 
@@ -563,6 +596,7 @@ MVP 范围整体清晰，核心边界明确：
 - 预算偏差表能展示核心指标的实际值、预算值、偏差金额、偏差率。
 - 正向和负向偏差有明确标记。
 - AI 偏差解释来自后端真实 AI 分析服务，不直接写在前端。
+- **已知差异：** 前端 **`BudgetVarianceView`** 当前使用固定默认 **`periodId`**，未提供 `PeriodSelector`（与 **§7.2** 一致）。
 
 ---
 
@@ -653,7 +687,7 @@ MVP 范围整体清晰，核心边界明确：
 
 **如何验证**
 
-- 在 `backend/` 执行 Maven 测试，确认项目能编译。
+- 在 `backend/` 执行 Maven 测试，确认项目能编译（当前仓库为 **Java 21**、Spring Boot **3.4.x**）。
 - 启动后端，访问 `GET /api/health`，预期返回成功响应。
 
 **如果失败如何回滚**
@@ -704,7 +738,7 @@ MVP 范围整体清晰，核心边界明确：
 
 - 使用 MySQL 执行 `schema.sql`。
 - 确认存在 `finance_period`、`finance_metric`、`finance_budget`、`business_line_metric` 四张表。
-- 确认 `application.yml` 已配置 Spring Boot SQL 初始化路径，启动时会加载 `classpath:db/schema.sql` 和 `classpath:db/data.sql`。
+- 确认 `application.yml` 已配置 Spring Boot SQL 初始化：`spring.sql.init.schema-locations` 指向 `classpath:db/schema.sql`；**`data-locations` 可为 `optional:classpath:db/data.sql`**（Step 4 再提供 `data.sql` 时仍兼容空库启动）。
 
 **如果失败如何回滚**
 
@@ -884,28 +918,26 @@ MVP 范围整体清晰，核心边界明确：
 
 **修改哪些文件**
 
-- `backend/src/main/resources/application.yml`
+- `backend/pom.xml`（引入 Spring AI BOM 与 `spring-ai-starter-model-openai`）
+- `backend/src/main/resources/application.yml`（`spring.ai.openai.*` 与 `ai.deepseek.*`）
 
 **新增哪些文件**
 
 - `backend/src/main/java/com/aifinance/ai/provider/AiProvider.java`
-- `backend/src/main/java/com/aifinance/ai/provider/OpenAiCompatibleAiProvider.java`
+- `backend/src/main/java/com/aifinance/ai/provider/OpenAiCompatibleAiProvider.java`（基于 **`ChatModel`**）
 - `backend/src/main/java/com/aifinance/ai/config/AiProperties.java`
 - `backend/src/main/java/com/aifinance/ai/dto/AiAnalysisContext.java`
-- `backend/src/main/java/com/aifinance/ai/dto/AiQuestionRequest.java`
-- `backend/src/main/java/com/aifinance/ai/dto/AiAnswerResponse.java`
-- `backend/src/main/java/com/aifinance/ai/dto/AiSummaryResponse.java`
-- `backend/src/main/java/com/aifinance/ai/dto/OpenAiChatRequest.java`
-- `backend/src/main/java/com/aifinance/ai/dto/OpenAiChatResponse.java`
+- `backend/src/main/java/com/aifinance/ai/dto/AiAskRequest.java`（问答请求体）
+- `backend/src/main/java/com/aifinance/ai/dto/AiAnswerResponse.java`（摘要与问答统一结构）
 - `backend/src/test/java/com/aifinance/ai/provider/OpenAiCompatibleAiProviderTest.java`
 
 **如何验证**
 
-- 测试 `AiProvider` 能接收财务上下文、用户问题和回答结构要求。
-- 测试 `OpenAiCompatibleAiProvider` 从环境变量读取 DeepSeek base URL、API Key 和 model。
-- 使用 mock HTTP server 验证真实 AI 请求格式，不在单元测试中真实消耗模型额度。
-- 验证请求路径为 OpenAI-compatible chat completions，消息包含 system prompt 和 user prompt。
-- 验证请求体包含 `model=deepseek-v4-pro`、`stream=false`、`reasoning_effort=high`、`extra_body.thinking.type=enabled`。
+- 测试 `AiProvider` 能接收财务上下文并返回结构化 `AiAnswerResponse`。
+- 测试 `OpenAiCompatibleAiProvider` 使用注入的 `AiProperties` 设置 `OpenAiChatOptions`（model、reasoningEffort、extraBody）。
+- **Mock `ChatModel.call(Prompt)`** 验证 Prompt 与选项，不在单元测试中真实消耗模型额度。
+- 验证 Prompt 含 system 约束与 user 侧上下文 JSON。
+- 验证选项含 `model=deepseek-v4-pro`、`reasoningEffort=high`、启用 thinking 时 `extraBody` 含 `thinking` 映射。
 - 测试解析后的回答包含结论、数据依据、原因分析、风险提示、建议动作。
 
 **如果失败如何回滚**
@@ -923,7 +955,7 @@ MVP 范围整体清晰，核心边界明确：
 
 **新增哪些文件**
 
-- `backend/src/main/java/com/aifinance/ai/service/AiAnalysisService.java`
+- `backend/src/main/java/com/aifinance/ai/service/AiAnalysisService.java`（含 **`budgetExplanation`**，供预算模块复用）
 - `backend/src/main/java/com/aifinance/ai/controller/AiAnalysisController.java`
 - `backend/src/test/java/com/aifinance/ai/service/AiAnalysisServiceTest.java`
 - `backend/src/test/java/com/aifinance/ai/controller/AiAnalysisControllerTest.java`
@@ -1000,7 +1032,7 @@ MVP 范围整体清晰，核心边界明确：
 
 **修改哪些文件**
 
-- `frontend/src/router/index.ts`
+- `frontend/src/router/index.ts`（**`/` 驾驶舱**、**`/welcome` 欢迎页**）
 
 **新增哪些文件**
 
@@ -1011,6 +1043,7 @@ MVP 范围整体清晰，核心边界明确：
 - `frontend/src/api/report.ts`
 - `frontend/src/api/finance.ts`
 - `frontend/src/types/finance.ts`
+- `frontend/src/styles.css`（若工程采用全局样式入口）
 
 **如何验证**
 
@@ -1146,10 +1179,11 @@ MVP 范围整体清晰，核心边界明确：
 **新增哪些文件**
 
 - 可选新增：`README.md`
+- 可选新增：**`docker-compose.yml`**（MySQL 默认映射宿主 **3307**；`backend-dev` / `frontend-dev` 在 **`profiles: dev`** 下为 **挂载源码的空转容器**，默认 **不自动启动** Spring Boot / Vite，见 **§7.2**。）
 
 **如何验证**
 
-- 后端和前端同时启动。
+- 后端和前端同时启动（或 Compose **仅起 `mysql` 服务**后，在宿主机本地起 Spring Boot + Vite）。
 - 从首页进入 AI 分析、预算偏差、经营报告页面，主要流程都能完成。
 - 浏览器控制台无明显接口错误。
 
@@ -1207,5 +1241,24 @@ MVP 范围整体清晰，核心边界明确：
 
 - 需求覆盖：设计文档中的驾驶舱、AI 问答、预算偏差、经营报告、示例数据、AI Provider 扩展点均已映射到开发模块和步骤。
 - 范围控制：计划明确排除了登录权限、Excel/CSV 上传、ERP 对接、PDF/Word 导出、复杂 Agent 和多模型路由。
-- 模块边界：财务计算集中在 `FinanceAnalysisService` 和 `FinanceMetricCalculator`；真实 AI 调用集中在 `AiProvider` 与 `OpenAiCompatibleAiProvider`；前端页面只通过 API 客户端访问后端。
+- 模块边界：财务计算集中在 `FinanceAnalysisService` 和 `FinanceMetricCalculator`；真实 AI 调用集中在 `AiProvider` 与 `OpenAiCompatibleAiProvider`（底层为 **Spring AI `ChatModel`**）；前端页面只通过 API 客户端访问后端。
 - 渐进开发：每个 Step 都有文件范围、验证方式和回滚方式，且要求验证通过后创建 git commit。
+- **与仓库同步（2026-05-11）**：已用当前 `AIDataAnalysis` 代码核对并修订上文 **§2.3**、**模块 5**、**Step 3 / 10 / 11 / 14 / 19** 及技术栈描述；实现以仓库为准，初稿中手写 `OpenAiChatRequest`/`AiSummaryResponse` 等路径已作废或替换。
+- **与仓库同步（2026-05-12）**：修订 **§0.3**、**§1.2**、**§2.2**、**模块 7/8**、**§7**，写入 **suggestions 语义**、**期间选择差异**、**Docker dev 容器行为**等。
+
+---
+
+## 7. 与仓库核对时的残留说明
+
+### 7.1 非阻塞 / 运维注意
+
+- **`HomeView.vue`**：已挂路由 **`/welcome`**（侧栏「欢迎」），作为平台说明与入口页。
+- **双配置**：`spring.ai.openai` 与 `ai.deepseek` 并存时，需在变更配置时保持 **Spring AI 自动装配的 `ChatModel`** 与 **`AiProperties`** 一致，避免 model/key 来源不一致。
+- **集成测试**：当前以 Mock `ChatModel` 为主；若需严格校验发往 DeepSeek 的 HTTP JSON，可另起契约测试，不属于 MVP 必选项。
+
+### 7.2 已知产品或体验差异（文档与代码一致声明）
+
+- **财务期间选择：** **`ReportView`** 使用 **`PeriodSelector`** 可切换 `periodId`。**`DashboardView`、`AiAnalysisView`、`BudgetVarianceView`** 当前使用代码内 **固定默认 `periodId`（如 4）**，未提供期间下拉。若要对齐「全站可选月」，需在上述三页复用 `PeriodSelector` 并贯通 API 参数。
+- **`GET /api/ai/suggestions`：** 非固定快捷词表；为 **额外一次模型调用** + 解析 **`recommendation` 多行** 得到 `List<String>`，成本与延迟高于「静态 suggestions」。
+- **未知问题「兜底」：** 无后端正则意图或模板化稳定回答；依赖模型；失败时主要为 **HTTP/解析错误** 与前端通用提示。
+- **`docker-compose.yml` 中 `backend-dev` / `frontend-dev`：** 默认 command 为 **`tail -f /dev/null`**，用于挂载源码的**空转开发容器**，**不会自动**执行 `mvn spring-boot:run` 或 `npm run dev`；一键起服务需自行在容器内执行命令或改 compose。

@@ -1,0 +1,51 @@
+:root {
+  /* ==========================================================================
+     Modern SaaS / FinTech Enterprise UI Theme
+     Clean, Professional, Data-driven
+     ========================================================================== */
+  /* Main Backgrounds */
+  --color-bg-base: #F8FAFC; /* Slate 50 - Light Gray */
+  --color-surface: #FFFFFF;
+  --color-surface-soft: #F1F5F9; /* Slate 100 */
+  --color-border: #E2E8F0; /* Slate 200 */
+  
+  /* Typography */
+  --color-ink: #0F172A; /* Slate 900 - Deep Blue/Gray */
+  --color-muted: #64748B; /* Slate 500 */
+  
+  /* Brand Colors */
+  --color-primary: #2563EB; /* Tech Blue - Blue 600 */
+  --color-primary-dark: #1E3A8A; /* Deep Blue - Blue 900 */
+  --color-primary-light: #EFF6FF; /* Blue 50 */
+  
+  /* State Colors */
+  --color-success: #10B981; /* Emerald 500 */
+  --color-success-bg: #ECFDF5; /* Emerald 50 */
+  --color-warning: #F59E0B; /* Amber 500 */
+  --color-warning-bg: #FFFBEB; /* Amber 50 */
+  --color-danger: #EF4444; /* Red 500 */
+  --color-danger-bg: #FEF2F2; /* Red 50 */
+  
+  /* AI Accent */
+  --color-accent-purple: #8B5CF6; /* Violet 500 */
+  --color-accent-purple-bg: #F5F3FF; /* Violet 50 */
+  --color-accent-blue: #3B82F6; /* Blue 500 */
+  --color-accent-blue-bg: #EFF6FF; /* Blue 50 */
+  
+  /* Chart Colors */
+  --color-chart-revenue: #2563EB;
+  --color-chart-cost: #F59E0B;
+  --color-chart-profit: #10B981;
+  --color-chart-cash: #8B5CF6;
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-card: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.05), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+  --shadow-floating: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-fin-card: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+  --shadow-glow: 0 10px 15px -3px rgb(0 0 0 / 0.05), 0 4px 6px -4px rgb(0 0 0 / 0.05);
+  --shadow-glow-hover: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  
+  --glass-blur: blur(12px);
+}

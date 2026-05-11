@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: ai-finance-backend
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      chat:
+        base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+        completions-path: /chat/completions
+        options:
+          model: ${DEEPSEEK_MODEL:deepseek-v4-pro}
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3307/ai_finance?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
+    username: ${SPRING_DATASOURCE_USERNAME:ai_finance}
+    password: ${SPRING_DATASOURCE_PASSWORD:ai_finance_password}
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+      data-locations: optional:classpath:db/data.sql
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+
+server:
+  port: 8080
+
+app:
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
+
+ai:
+  deepseek:
+    api-key: ${DEEPSEEK_API_KEY:}
+    base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+    model: ${DEEPSEEK_MODEL:deepseek-v4-pro}
+    reasoning-effort: ${DEEPSEEK_REASONING_EFFORT:high}
+    thinking-enabled: ${DEEPSEEK_THINKING_ENABLED:true}

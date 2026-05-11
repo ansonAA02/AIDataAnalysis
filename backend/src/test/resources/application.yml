@@ -1,0 +1,5 @@
+# 仅用于单元测试 / 集成测试加载 Spring 上下文；不会发起真实外部调用（相关 Bean 已 Mock 或未触发）。
+spring:
+  ai:
+    openai:
+      api-key: test-dummy-key-for-spring-context-only
