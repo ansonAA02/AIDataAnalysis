@@ -30,12 +30,66 @@ async function submitQuestion(selectedQuestion = question.value) {
   errorMessage.value = '';
 
   try {
-    answer.value = await askAi({
-      periodId: DEFAULT_PERIOD_ID,
-      question: normalizedQuestion,
+    // 預留一個空的 AI Answer 對象來接收串流數據
+    answer.value = {
+      conclusion: '',
+      evidence: '',
+      analysis: '',
+      risk: '',
+      recommendation: ''
+    };
+    
+    const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080').replace(/\/$/, '');
+    
+    const response = await fetch(`${apiBaseUrl}/api/ai/ask/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ periodId: DEFAULT_PERIOD_ID, question: normalizedQuestion })
     });
-  } catch {
-    errorMessage.value = 'AI 分析请求失败，请稍后重试。';
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('No stream reader available');
+    
+    loading.value = false; // 開始接收數據後解除 loading 狀態
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let eventData = '';
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || '';
+      
+      for (const line of lines) {
+        if (line.startsWith('data:')) {
+          let text = line.substring(5);
+          if (text.startsWith(' ')) text = text.substring(1);
+          if (eventData !== '') eventData += '\n';
+          eventData += text;
+        } else if (line === '') {
+          if (eventData !== '') {
+            // 將收到的串流文字簡單地追加到 conclusion 中展示（因為串流是純文本 Markdown）
+            if (answer.value) {
+              answer.value.conclusion += eventData;
+            }
+            eventData = '';
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('AI Stream Error:', err);
+    errorMessage.value = 'AI 分析請求失敗，請檢查網絡或後端配置。';
+    answer.value = null;
   } finally {
     loading.value = false;
   }
