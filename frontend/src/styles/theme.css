@@ -68,18 +68,29 @@
   --color-primary: #3B82F6;        /* Brighter blue for dark backdrop */
   --color-primary-dark: #1D4ED8;
   --color-primary-light: #1E3A8A;
+  /* Brighter foreground state colors so badges + headings still pop. */
+  --color-success: #34D399;        /* Emerald 400 */
+  --color-warning: #FBBF24;        /* Amber 400 */
+  --color-danger: #F87171;         /* Red 400 */
+  --color-accent-purple: #A78BFA;  /* Violet 400 */
+  --color-accent-blue: #60A5FA;    /* Blue 400 */
   --color-success-bg: #064E3B;
   --color-warning-bg: #78350F;
   --color-danger-bg: #7F1D1D;
   --color-accent-purple-bg: #4C1D95;
   --color-accent-blue-bg: #1E3A8A;
+  /* Chart palette tweak — light-mode hex values look muddy on slate. */
+  --color-chart-revenue: #60A5FA;
+  --color-chart-cost: #FBBF24;
+  --color-chart-profit: #34D399;
+  --color-chart-cash: #A78BFA;
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
   --shadow-card: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.4);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.4);
   --shadow-floating: 0 20px 25px -5px rgb(0 0 0 / 0.6), 0 8px 10px -6px rgb(0 0 0 / 0.5);
   --shadow-fin-card: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.4);
-  --shadow-glow: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.4);
-  --shadow-glow-hover: 0 20px 25px -5px rgb(0 0 0 / 0.6), 0 8px 10px -6px rgb(0 0 0 / 0.5);
+  --shadow-glow: 0 4px 12px rgb(59 130 246 / 0.18);
+  --shadow-glow-hover: 0 12px 24px rgb(59 130 246 / 0.28);
 }
 
 /* Compact density: tighter spacing, used by tablets / power users. */
@@ -171,4 +182,215 @@ body {
 .theme-dark input::placeholder,
 .theme-dark textarea::placeholder {
   color: var(--color-muted);
+}
+
+/* ----------------------------------------------------------------------------
+   App-wide dark-mode patches
+   ---------------------------------------------------------------------------
+   Below sections target legacy class names from styles.css and individual
+   <style scoped> blocks where colors were hard-coded for the light theme.
+   Each rule re-skins the element while keeping spacing / typography intact.
+   -------------------------------------------------------------------------- */
+
+/* Subtle warm radial gradient on body — invisible on slate-900 anyway, but
+   remove it so the dark base stays clean. */
+.theme-dark body {
+  background-image: none;
+}
+
+/* Legacy primary button (DataImportView, SettingsView) and ghost button
+   that share the same inverted-ink fill. */
+.theme-dark .primary-button {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.theme-dark .primary-button:hover:not(:disabled) {
+  background: var(--color-primary-dark);
+}
+
+.theme-dark .ghost-button {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.35);
+  color: var(--color-primary);
+}
+
+/* AlertBellDropdown level / status pills — brighten foreground. */
+.theme-dark .alert-dropdown .level-tag,
+.theme-dark .alert-dropdown .status-tag[data-status='NEW'] {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fca5a5;
+}
+
+.theme-dark .alert-dropdown .level-medium .level-tag {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fcd34d;
+}
+
+.theme-dark .alert-dropdown .level-low .level-tag {
+  background: rgba(96, 165, 250, 0.18);
+  color: #93c5fd;
+}
+
+.theme-dark .alert-dropdown .status-tag[data-status='RESOLVED'] {
+  background: rgba(74, 222, 128, 0.18);
+  color: #86efac;
+}
+
+.theme-dark .alert-dropdown .item-message {
+  color: var(--color-ink);
+}
+
+/* AlertBellDropdown row hover affordance for resolve / ignore buttons. */
+.theme-dark .alert-dropdown .action-resolve:hover {
+  background: rgba(52, 211, 153, 0.14);
+  color: #6ee7b7;
+  border-color: #34d399;
+}
+
+.theme-dark .alert-dropdown .action-ignore:hover {
+  background: rgba(248, 113, 113, 0.14);
+  color: #fca5a5;
+  border-color: #f87171;
+}
+
+.theme-dark .alert-dropdown .dropdown-action:hover:not(:disabled) {
+  background: rgba(96, 165, 250, 0.14);
+}
+
+/* Top bar bell button uses --color-text (typo) for icon color. */
+.theme-dark .bell-button {
+  color: var(--color-ink);
+}
+
+.theme-dark .bell-button:hover {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+/* AppLayout sidebar nav links — use brighter hover background. */
+.theme-dark .nav-item:not(.router-link-active):hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+
+/* Variance table direction pills (BudgetVariance) — too saturated on dark. */
+.theme-dark .variance-rate[data-direction='up'],
+.theme-dark .variance-status[data-direction='over'] {
+  color: #fda4af;
+  background: rgba(244, 63, 94, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(244, 63, 94, 0.4);
+}
+
+.theme-dark .variance-rate[data-direction='down'],
+.theme-dark .variance-status[data-direction='under'] {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.4);
+}
+
+.theme-dark .variance-explanation-grid article {
+  border-color: rgba(96, 165, 250, 0.25);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.08), transparent);
+}
+
+.theme-dark .variance-table tbody tr:hover {
+  background: rgba(96, 165, 250, 0.08);
+}
+
+/* Hot budget signal card uses a hard amber gradient that blends OK on dark.
+   Just bump the warning border so it pops. */
+.theme-dark .budget-signal-card--hot {
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+/* Period selector + report toolbar pickers force a light-blue fill. */
+.theme-dark .period-selector select {
+  background: var(--color-surface-soft);
+  color: var(--color-ink);
+}
+
+/* Fin promo (Dashboard call-to-action) uses surface-soft. Ensure foreground
+   colors switch with the theme. */
+.theme-dark .fin-promo--green h3,
+.theme-dark .fin-promo--green p {
+  color: var(--color-success);
+}
+
+/* Fin metric table hover row + state cards. */
+.theme-dark .fin-metric-table tr:hover td {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.theme-dark .state-card--error {
+  color: #fca5a5;
+}
+
+.theme-dark .state-card--warning {
+  color: #fcd34d;
+}
+
+/* Risk list items inside the dashboard rail use hard slate translucents. */
+.theme-dark .fin-rail .risk-list li {
+  background: rgba(148, 163, 184, 0.06);
+  border-color: rgba(148, 163, 184, 0.15);
+}
+
+.theme-dark .fin-rail .risk-list li:hover {
+  background: rgba(96, 165, 250, 0.1);
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+/* AI Assistant floating panel — keep its purple brand on dark. */
+.theme-dark .ai-floating-button {
+  box-shadow: 0 8px 24px rgba(124, 58, 237, 0.45);
+}
+
+/* Q&A textarea focus ring + variance grid card border. */
+.theme-dark .question-form textarea:focus {
+  outline-color: rgba(96, 165, 250, 0.3);
+}
+
+/* AI detail grid sub-card border (--color-surface-soft + transparent border). */
+.theme-dark .ai-detail-grid div {
+  border-color: rgba(148, 163, 184, 0.15);
+}
+
+/* Dialog backdrop is fine, but boost contrast for the dialog itself. */
+.theme-dark .fin-dialog-backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+/* Report cover glass card — invert the white-on-blue to slate-on-slate. */
+.theme-dark .report-cover__meta {
+  border-color: rgba(148, 163, 184, 0.25);
+  background: rgba(30, 41, 59, 0.65);
+}
+
+.theme-dark .report-cover__meta strong {
+  color: var(--color-ink);
+}
+
+.theme-dark .report-cover__meta span {
+  color: var(--color-muted);
+}
+
+/* Report title card subtle blue glow — flatten on dark. */
+.theme-dark .report-title-card {
+  background: var(--color-surface);
+  border-color: rgba(96, 165, 250, 0.2);
+}
+
+.theme-dark .report-title-card::after {
+  background: rgba(96, 165, 250, 0.08);
+}
+
+/* Section marker square — use surface-soft so number stays visible. */
+.theme-dark .report-section-marker {
+  background: var(--color-surface-soft);
+  color: var(--color-ink);
+}
+
+/* Page-wide soft selection. */
+.theme-dark ::selection {
+  background: rgba(96, 165, 250, 0.4);
+  color: #fff;
 }
