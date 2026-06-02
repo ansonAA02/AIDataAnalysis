@@ -13,7 +13,9 @@ RUN npm run build
 FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
 # Nginx config template — $PORT is substituted at container start.
-RUN printf 'server {\n\
+# Create the templates dir first (nginx:alpine does NOT pre-create it at build time).
+RUN mkdir -p /etc/nginx/templates && \
+    printf 'server {\n\
     listen       %s;\n\
     server_name  _;\n\
     root         /usr/share/nginx/html;\n\
