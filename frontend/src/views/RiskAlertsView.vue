@@ -250,7 +250,7 @@ onMounted(syncFromPeriod);
   border: 1px solid var(--color-border);
   border-radius: 999px;
   background: var(--color-surface);
-  color: var(--color-text);
+  color: var(--color-ink);
   font-size: 13px;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
@@ -359,7 +359,7 @@ onMounted(syncFromPeriod);
   margin: 0;
   font-size: 14px;
   line-height: 1.5;
-  color: var(--color-text);
+  color: var(--color-ink);
   word-break: break-word;
 }
 

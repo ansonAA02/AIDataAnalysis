@@ -95,3 +95,80 @@ body {
   color: var(--color-ink);
   transition: background 0.2s ease, color 0.2s ease;
 }
+
+/* ----------------------------------------------------------------------------
+   Dark-mode component overrides
+   ---------------------------------------------------------------------------
+   Some components hard-code `--color-ink` or status colors that flip to a
+   light shade in dark mode, breaking the contrast. We re-skin those bits
+   here so the legacy components stay light-mode-correct while dark mode
+   still reads cleanly.
+   -------------------------------------------------------------------------- */
+
+/* Primary button: in dark mode, swap the inverted-ink fill for a brand-blue
+   pill so the white label stays legible. */
+.theme-dark .fin-btn--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.theme-dark .fin-btn--primary:hover {
+  background: var(--color-primary-dark);
+  border-color: var(--color-primary-dark);
+}
+
+/* Ghost button: lighten text + use translucent surface so it stands out
+   against the slate-900 page background. */
+.theme-dark .fin-btn--ghost {
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--color-ink);
+  border-color: var(--color-border);
+}
+
+.theme-dark .fin-btn--ghost:hover {
+  background: rgba(148, 163, 184, 0.15);
+}
+
+/* Accent button: warning-bg flips to deep amber on dark, so use white text. */
+.theme-dark .fin-btn--accent {
+  color: #fff;
+}
+
+/* Status / level pills used in RiskAlertsView reference hard-coded amber/red
+   foregrounds. Brighten them so they still pop against slate-800 cards. */
+.theme-dark .level-tag,
+.theme-dark .status-tag[data-status='NEW'] {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fca5a5;
+}
+
+.theme-dark .event-row.level-medium .level-tag {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fcd34d;
+}
+
+.theme-dark .event-row.level-low .level-tag {
+  background: rgba(96, 165, 250, 0.18);
+  color: #93c5fd;
+}
+
+.theme-dark .status-tag[data-status='RESOLVED'] {
+  background: rgba(74, 222, 128, 0.18);
+  color: #86efac;
+}
+
+/* Inputs / search fields default to white surface, which gets swapped to
+   slate-800 — make sure placeholder + caret stay readable. */
+.theme-dark input,
+.theme-dark select,
+.theme-dark textarea {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border-color: var(--color-border);
+}
+
+.theme-dark input::placeholder,
+.theme-dark textarea::placeholder {
+  color: var(--color-muted);
+}
