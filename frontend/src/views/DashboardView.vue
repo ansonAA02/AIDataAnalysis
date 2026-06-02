@@ -1,29 +1,37 @@
 <script setup lang="ts">
+// Dashboard view: subscribes to the global Pinia period store so it stays
+// in sync with every other view. The local PeriodSelector has been removed
+// in favor of the AppLayout top-bar selector.
 import { computed, onMounted, ref, watch } from 'vue';
+import { storeToRefs } from 'pinia';
 import { RouterLink } from 'vue-router';
 import { getAiSummary } from '../api/ai';
 import { getBudgetVariances } from '../api/budget';
 import { getDashboardOverview, getDashboardRisks, getDashboardTrends } from '../api/dashboard';
-import { getBusinessLines, getPeriods } from '../api/finance';
+import { getBusinessLines } from '../api/finance';
 import AiSummaryCard from '../components/AiSummaryCard.vue';
 import BudgetBarChart from '../components/BudgetBarChart.vue';
 import RevenueDonutChart from '../components/RevenueDonutChart.vue';
 import KpiCard from '../components/KpiCard.vue';
-import PeriodSelector from '../components/PeriodSelector.vue';
 import RiskAlertList from '../components/RiskAlertList.vue';
 import TrendChart from '../components/TrendChart.vue';
+import { usePeriodStore } from '../stores/period';
+import { exportDashboardToExcel } from '../utils/exportExcel';
+import { buildPrintFilename, printAsPdf } from '../utils/printPdf';
 import type {
   AiAnswer,
   BudgetVariance,
   BusinessLineMetric,
   DashboardOverview,
-  FinancePeriod,
   RiskAlert,
   TrendPoint,
 } from '../types/finance';
 
-const periods = ref<FinancePeriod[]>([]);
-const selectedPeriodId = ref<number | null>(null);
+// Fallback used when the store has no period yet (e.g. isolated tests).
+const DEFAULT_PERIOD_ID = 4;
+
+const periodStore = usePeriodStore();
+const { currentPeriodId } = storeToRefs(periodStore);
 
 const loading = ref(true);
 const errorMessage = ref('');
@@ -36,6 +44,11 @@ const businessLines = ref<BusinessLineMetric[]>([]);
 const variances = ref<BudgetVariance[]>([]);
 
 const selectedRisk = ref<RiskAlert | null>(null);
+
+// Resolve the active period id with a safe fallback for tests.
+function resolvePeriodId(): number {
+  return currentPeriodId.value ?? DEFAULT_PERIOD_ID;
+}
 
 const greeting = computed(() => {
   const hour = new Date().getHours();
@@ -80,11 +93,9 @@ function lineShare(line: BusinessLineMetric) {
   return `${((line.revenue / overview.value.revenue) * 100).toFixed(1)}%`;
 }
 
+// Load all dashboard widgets for the active period.
 async function loadDashboard() {
-  const periodId = selectedPeriodId.value;
-  if (periodId == null) {
-    return;
-  }
+  const periodId = resolvePeriodId();
 
   loading.value = true;
   errorMessage.value = '';
@@ -120,29 +131,16 @@ async function loadDashboard() {
   }
 }
 
-onMounted(async () => {
-  try {
-    periods.value = await getPeriods();
-    const list = periods.value;
-    const last = list.length ? list[list.length - 1] : undefined;
-    selectedPeriodId.value = last?.id ?? 4;
-  } catch {
-    errorMessage.value = '无法加载财务期间列表。';
-    selectedPeriodId.value = 4;
-  }
-  await loadDashboard();
-});
-
-watch(selectedPeriodId, (id, previous) => {
-  if (id == null || previous == null || id === previous) {
-    return;
-  }
+// Initial load: trigger immediately so isolated mounts (tests) still fetch.
+onMounted(() => {
   void loadDashboard();
 });
 
-function onPeriodChange(id: number) {
-  selectedPeriodId.value = id;
-}
+// Reload when the global period selector changes.
+watch(currentPeriodId, (id, previous) => {
+  if (id === previous) return;
+  void loadDashboard();
+});
 
 function onRiskSelect(risk: RiskAlert) {
   selectedRisk.value = risk;
@@ -150,6 +148,24 @@ function onRiskSelect(risk: RiskAlert) {
 
 function closeRiskDialog() {
   selectedRisk.value = null;
+}
+
+// Export the full dashboard snapshot (KPI / business lines / variances / risks) to Excel.
+function handleExportExcel() {
+  if (!overview.value) return;
+  exportDashboardToExcel({
+    overview: overview.value,
+    businessLines: businessLines.value,
+    variances: variances.value,
+    risks: risks.value,
+  });
+}
+
+// Trigger native print dialog so the user can save the dashboard as PDF.
+function handleExportPdf() {
+  if (!overview.value) return;
+  const filename = buildPrintFilename('经营驾驶舱', overview.value.periodLabel ?? '');
+  printAsPdf(filename);
 }
 </script>
 
@@ -160,13 +176,23 @@ function closeRiskDialog() {
         <p>{{ greeting }}，欢迎回到经营驾驶舱</p>
         <h1 id="dash-heading">本月经营概览</h1>
       </div>
-      <div class="fin-header__actions">
-        <PeriodSelector
-          v-if="periods.length > 0 && selectedPeriodId != null"
-          :periods="periods"
-          :model-value="selectedPeriodId"
-          @update:model-value="onPeriodChange"
-        />
+      <div class="fin-header__actions export-actions">
+        <button
+          type="button"
+          class="fin-btn fin-btn--ghost"
+          :disabled="loading || !overview"
+          @click="handleExportExcel"
+        >
+          导出 Excel
+        </button>
+        <button
+          type="button"
+          class="fin-btn fin-btn--ghost"
+          :disabled="loading || !overview"
+          @click="handleExportPdf"
+        >
+          导出 PDF
+        </button>
         <RouterLink class="fin-btn fin-btn--primary" to="/reports">生成报告</RouterLink>
         <RouterLink class="fin-btn fin-btn--accent" to="/ai">AI 问答</RouterLink>
         <div class="fin-avatar" aria-hidden="true">ME</div>
@@ -273,7 +299,16 @@ function closeRiskDialog() {
                   </thead>
                   <tbody>
                     <tr v-for="line in businessLines" :key="line.businessLine">
-                      <td>{{ line.businessLine }}</td>
+                      <td>
+                        <RouterLink
+                          :to="`/business-lines/${encodeURIComponent(line.businessLine)}`"
+                          class="line-drill-link"
+                          :title="`查看 ${line.businessLine} 详情`"
+                        >
+                          {{ line.businessLine }}
+                          <span aria-hidden="true">›</span>
+                        </RouterLink>
+                      </td>
                       <td>{{ formatAmount(line.revenue, line.unit) }}</td>
                       <td>{{ formatAmount(line.netProfit, line.unit) }}</td>
                       <td>{{ lineShare(line) }}</td>
@@ -368,5 +403,26 @@ function closeRiskDialog() {
   .chart-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.line-drill-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: 600;
+  border-bottom: 1px dashed transparent;
+  transition: border-color 0.2s ease, opacity 0.2s ease;
+}
+
+.line-drill-link:hover {
+  border-bottom-color: var(--color-primary);
+  opacity: 0.85;
+}
+
+.line-drill-link span {
+  font-size: 14px;
+  opacity: 0.6;
 }
 </style>

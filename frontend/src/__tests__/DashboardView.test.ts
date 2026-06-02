@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { describe, expect, it, vi } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import DashboardView from '../views/DashboardView.vue';
 
@@ -14,7 +15,6 @@ vi.mock('../api/ai', () => ({
 }));
 
 vi.mock('../api/finance', () => ({
-  getPeriods: vi.fn(),
   getBusinessLines: vi.fn(),
 }));
 
@@ -29,10 +29,24 @@ vi.mock('../components/TrendChart.vue', () => ({
   },
 }));
 
+vi.mock('../components/BudgetBarChart.vue', () => ({
+  default: {
+    props: ['trends'],
+    template: '<section data-testid="budget-chart">预算点 {{ trends.length }}</section>',
+  },
+}));
+
+vi.mock('../components/RevenueDonutChart.vue', () => ({
+  default: {
+    props: ['data'],
+    template: '<section data-testid="revenue-chart">业务线 {{ data.length }}</section>',
+  },
+}));
+
 import { getAiSummary } from '../api/ai';
 import { getBudgetVariances } from '../api/budget';
 import { getDashboardOverview, getDashboardRisks, getDashboardTrends } from '../api/dashboard';
-import { getBusinessLines, getPeriods } from '../api/finance';
+import { getBusinessLines } from '../api/finance';
 import type { RiskAlert } from '../types/finance';
 
 const overview = {
@@ -70,11 +84,6 @@ const summary = {
   recommendation: '复盘供应商和项目交付成本。',
 };
 
-const periods = [
-  { id: 3, yearValue: 2025, monthValue: 8, quarterValue: 3, periodLabel: '2025-08' },
-  { id: 4, yearValue: 2025, monthValue: 9, quarterValue: 3, periodLabel: '2025-09' },
-];
-
 const businessLines = [
   { businessLine: '企业服务', revenue: 790, cost: 560, grossProfit: 230, netProfit: 88, unit: '万元' },
   { businessLine: '订阅业务', revenue: 520, cost: 350, grossProfit: 170, netProfit: 67, unit: '万元' },
@@ -93,6 +102,11 @@ const variances = [
 ];
 
 function mountDashboard() {
+  // Install a fresh Pinia instance for each test so the period store is
+  // isolated between tests. The view falls back to DEFAULT_PERIOD_ID = 4
+  // when the store has no preloaded period.
+  const pinia = createPinia();
+  setActivePinia(pinia);
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -102,19 +116,30 @@ function mountDashboard() {
       { path: '/ai', component: { template: '<div />' } },
       { path: '/reports', component: { template: '<div />' } },
       { path: '/risks', component: { template: '<div />' } },
+      // Stub for the drill-down route used by clickable business line cells.
+      { path: '/business-lines/:lineName', component: { template: '<div />' } },
     ],
   });
 
   return mount(DashboardView, {
     global: {
-      plugins: [router],
+      plugins: [pinia, router],
     },
   });
 }
 
 describe('DashboardView', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('renders loading state before dashboard data resolves', () => {
-    vi.mocked(getPeriods).mockReturnValue(new Promise(() => {}));
+    // Block all dashboard APIs so the view stays in loading state.
+    vi.mocked(getDashboardOverview).mockReturnValue(new Promise(() => {}));
+    vi.mocked(getDashboardTrends).mockReturnValue(new Promise(() => {}));
+    vi.mocked(getDashboardRisks).mockReturnValue(new Promise(() => {}));
+    vi.mocked(getBusinessLines).mockReturnValue(new Promise(() => {}));
+    vi.mocked(getBudgetVariances).mockReturnValue(new Promise(() => {}));
 
     const wrapper = mountDashboard();
 
@@ -122,7 +147,6 @@ describe('DashboardView', () => {
   });
 
   it('renders KPI, trend, risk, and AI summary sections from backend data', async () => {
-    vi.mocked(getPeriods).mockResolvedValue(periods);
     vi.mocked(getDashboardOverview).mockResolvedValue(overview);
     vi.mocked(getDashboardTrends).mockResolvedValue(trends);
     vi.mocked(getDashboardRisks).mockResolvedValue(risks);
@@ -131,6 +155,7 @@ describe('DashboardView', () => {
     vi.mocked(getAiSummary).mockResolvedValue(summary);
 
     const wrapper = mountDashboard();
+    await flushPromises();
     await flushPromises();
 
     expect(wrapper.text()).toContain('本月经营概览');
@@ -146,7 +171,6 @@ describe('DashboardView', () => {
   });
 
   it('keeps dashboard data visible when AI summary API fails', async () => {
-    vi.mocked(getPeriods).mockResolvedValue(periods);
     vi.mocked(getDashboardOverview).mockResolvedValue(overview);
     vi.mocked(getDashboardTrends).mockResolvedValue(trends);
     vi.mocked(getDashboardRisks).mockResolvedValue(risks);
@@ -156,6 +180,7 @@ describe('DashboardView', () => {
 
     const wrapper = mountDashboard();
     await flushPromises();
+    await flushPromises();
 
     expect(wrapper.text()).toContain('2025-09 核心指标');
     expect(wrapper.text()).toContain('1,310.00 万元');
@@ -163,7 +188,6 @@ describe('DashboardView', () => {
   });
 
   it('renders an accessible error state when dashboard APIs fail', async () => {
-    vi.mocked(getPeriods).mockResolvedValue(periods);
     vi.mocked(getDashboardOverview).mockRejectedValue(new Error('network down'));
     vi.mocked(getDashboardTrends).mockResolvedValue([]);
     vi.mocked(getDashboardRisks).mockResolvedValue([]);
@@ -172,6 +196,7 @@ describe('DashboardView', () => {
     vi.mocked(getAiSummary).mockResolvedValue(summary);
 
     const wrapper = mountDashboard();
+    await flushPromises();
     await flushPromises();
 
     expect(wrapper.get('[role="alert"]').text()).toContain('经营数据加载失败');

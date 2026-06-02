@@ -41,6 +41,32 @@ public class FinanceMetric {
     protected FinanceMetric() {
     }
 
+    // Convenience constructor used by the CSV import service.
+    public FinanceMetric(
+            Long periodId,
+            MetricCode metricCode,
+            String metricName,
+            String metricCategory,
+            BigDecimal actualValue,
+            String unit) {
+        this.periodId = periodId;
+        this.metricCode = metricCode;
+        this.metricName = metricName;
+        this.metricCategory = metricCategory;
+        this.actualValue = actualValue;
+        this.unit = unit;
+    }
+
+    // Setter exposed so the import service can upsert existing rows.
+    public void setActualValue(BigDecimal actualValue) {
+        this.actualValue = actualValue;
+    }
+
+    // Setter used when re-importing changes the human-readable unit.
+    public void setUnit(String unit) {
+        this.unit = unit;
+    }
+
     public Long getId() {
         return id;
     }

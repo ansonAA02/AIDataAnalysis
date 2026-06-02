@@ -1,17 +1,33 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+// Budget variance view: reads the active period from the global Pinia
+// store and reloads variance + AI explanation whenever the user switches
+// period from the global top-bar selector.
+import { computed, onMounted, ref, watch } from 'vue';
+import { storeToRefs } from 'pinia';
 import { getBudgetExplanation, getBudgetVariances } from '../api/budget';
 import BudgetVarianceTable from '../components/BudgetVarianceTable.vue';
 import VarianceExplanationCard from '../components/VarianceExplanationCard.vue';
+import { usePeriodStore } from '../stores/period';
+import { exportBudgetVariancesToExcel } from '../utils/exportExcel';
 import type { BudgetExplanation, BudgetVariance } from '../types/finance';
 
+// Fallback period id used only when the store has no period yet (e.g. tests
+// that mount this view in isolation without preloading periods).
 const DEFAULT_PERIOD_ID = 4;
+
+const periodStore = usePeriodStore();
+const { currentPeriodId } = storeToRefs(periodStore);
 
 const loading = ref(true);
 const errorMessage = ref('');
 const explanationError = ref('');
 const variances = ref<BudgetVariance[]>([]);
 const explanation = ref<BudgetExplanation | null>(null);
+
+// Resolve the period id to use for API calls, with a safe fallback.
+function resolvePeriodId(): number {
+  return currentPeriodId.value ?? DEFAULT_PERIOD_ID;
+}
 
 const overBudgetCount = computed(() => variances.value.filter((item) => item.varianceAmount > 0).length);
 const maxVariance = computed(() =>
@@ -28,29 +44,44 @@ function formatRate(value: number) {
   return `${value.toFixed(2)}%`;
 }
 
+// Trigger Excel download for the currently loaded budget variance dataset.
+function handleExportExcel() {
+  if (variances.value.length === 0) return;
+  const periodLabel = periodStore.currentPeriod?.periodLabel ?? '';
+  exportBudgetVariancesToExcel(variances.value, periodLabel);
+}
+
+// Load budget variance + AI explanation for the currently active period.
 async function loadBudgetVariance() {
+  const periodId = resolvePeriodId();
   loading.value = true;
   errorMessage.value = '';
   explanationError.value = '';
   explanation.value = null;
 
   try {
-    variances.value = await getBudgetVariances(DEFAULT_PERIOD_ID);
+    variances.value = await getBudgetVariances(periodId);
   } catch {
     errorMessage.value = '预算偏差表加载失败，请确认后端与数据库已启动。';
     loading.value = false;
     return;
   }
-  
+
   // Unblock UI rendering before fetching the slow AI explanation
   loading.value = false;
 
   try {
-    explanation.value = await getBudgetExplanation(DEFAULT_PERIOD_ID);
+    explanation.value = await getBudgetExplanation(periodId);
   } catch {
     explanationError.value = 'AI 偏差解释暂不可用，预算表数据仍可查看。';
   }
 }
+
+// Reload data whenever the global period selector switches periods.
+watch(currentPeriodId, (next, prev) => {
+  if (next === prev) return;
+  void loadBudgetVariance();
+});
 
 onMounted(loadBudgetVariance);
 </script>
@@ -63,9 +94,19 @@ onMounted(loadBudgetVariance);
         <h2 id="budget-title">预算偏差雷达</h2>
         <p>以预算执行为核心，把超支、节余和 AI 偏差解释聚合到同一张经营雷达图景中。</p>
       </div>
-      <div class="budget-orbit" aria-label="预算偏差概览">
-        <span>{{ overBudgetCount }}</span>
-        <small>项超支</small>
+      <div class="hero-actions export-actions">
+        <button
+          type="button"
+          class="export-btn"
+          :disabled="loading || variances.length === 0"
+          @click="handleExportExcel"
+        >
+          导出 Excel
+        </button>
+        <div class="budget-orbit" aria-label="预算偏差概览">
+          <span>{{ overBudgetCount }}</span>
+          <small>项超支</small>
+        </div>
       </div>
     </section>
 
@@ -108,6 +149,34 @@ onMounted(loadBudgetVariance);
 </template>
 
 <style scoped>
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.export-btn {
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-ink);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.export-btn:hover:not(:disabled) {
+  background: var(--color-surface-alt, #f3f4f6);
+  border-color: var(--color-ink);
+}
+
+.export-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .budget-orbit {
   display: flex;
   flex-direction: column;

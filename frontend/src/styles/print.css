@@ -1,0 +1,93 @@
+/* Global print stylesheet: keeps only report/dashboard content when user prints (or saves as PDF). */
+
+@media print {
+  /* Reset paper background and remove unnecessary chrome shadows */
+  html,
+  body,
+  #app {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide global navigation and AI floating widgets while printing */
+  .app-sidebar,
+  .sidebar,
+  .top-bar,
+  .app-topbar,
+  .global-period-selector,
+  .ai-floating,
+  .ai-assistant-floating,
+  .ai-floating-button,
+  .ai-floating-panel,
+  nav,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Hide all action buttons (export buttons, refresh buttons, etc.) */
+  button,
+  .fin-btn,
+  .primary-button,
+  .export-actions {
+    display: none !important;
+  }
+
+  /* Make main content area full width */
+  .app-main,
+  .app-content,
+  main,
+  .view-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 12px 18px !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+  }
+
+  /* Avoid splitting cards/sections across pages when possible */
+  .kpi-card,
+  .report-section,
+  .chart-card,
+  .fin-card,
+  table,
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Tables: keep crisp borders for printed output */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+  th,
+  td {
+    border: 1px solid #888 !important;
+    padding: 6px 8px !important;
+    color: #000 !important;
+  }
+
+  /* Ensure charts/SVGs scale to print width without overflow */
+  svg,
+  canvas,
+  .echarts-container {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  /* Drop fancy gradient backgrounds that waste ink */
+  * {
+    background-image: none !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Page setup: A4 with reasonable margins */
+  @page {
+    size: A4;
+    margin: 12mm 14mm;
+  }
+}

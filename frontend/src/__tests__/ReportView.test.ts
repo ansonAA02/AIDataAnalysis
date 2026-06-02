@@ -1,23 +1,26 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { describe, expect, it, vi } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ReportView from '../views/ReportView.vue';
-import type { FinancePeriod, Report } from '../types/finance';
-
-vi.mock('../api/finance', () => ({
-  getPeriods: vi.fn(),
-}));
+import { usePeriodStore } from '../stores/period';
+import type { Report } from '../types/finance';
 
 vi.mock('../api/report', () => ({
   getMonthlyReport: vi.fn(),
 }));
 
-import { getPeriods } from '../api/finance';
 import { getMonthlyReport } from '../api/report';
 
-const periods: FinancePeriod[] = [
-  { id: 4, yearValue: 2025, monthValue: 9, quarterValue: 3, periodLabel: '2025-09' },
-  { id: 5, yearValue: 2025, monthValue: 10, quarterValue: 4, periodLabel: '2025-10' },
-];
+// Mount the report view with a fresh Pinia instance per test. The view
+// falls back to DEFAULT_PERIOD_ID = 4 when the store has no period.
+function mountReport() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  const wrapper = mount(ReportView, {
+    global: { plugins: [pinia] },
+  });
+  return { wrapper, pinia };
+}
 
 const report: Report = {
   periodId: 4,
@@ -37,11 +40,14 @@ const report: Report = {
 };
 
 describe('ReportView', () => {
-  it('renders report cover, period selector, and fixed report sections', async () => {
-    vi.mocked(getPeriods).mockResolvedValue(periods);
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders report cover and fixed report sections', async () => {
     vi.mocked(getMonthlyReport).mockResolvedValue(report);
 
-    const wrapper = mount(ReportView);
+    const { wrapper } = mountReport();
     await flushPromises();
 
     expect(getMonthlyReport).toHaveBeenCalledWith(4);
@@ -58,32 +64,32 @@ describe('ReportView', () => {
     expect(wrapper.text()).toContain('本期利润承压。');
   });
 
-  it('loads a new report when selected period changes', async () => {
-    vi.mocked(getPeriods).mockResolvedValue(periods);
+  it('reloads the report when the global period store changes', async () => {
     vi.mocked(getMonthlyReport).mockResolvedValue(report);
-    const wrapper = mount(ReportView);
+    const { wrapper } = mountReport();
     await flushPromises();
 
-    await wrapper.get('select').setValue('5');
+    // Switch the global period; the report view should refetch.
+    const store = usePeriodStore();
+    store.setCurrentPeriod(5);
     await flushPromises();
 
     expect(getMonthlyReport).toHaveBeenLastCalledWith(5);
+    expect(wrapper.text()).toContain('董事会经营报告');
   });
 
   it('renders loading state before report data resolves', () => {
-    vi.mocked(getPeriods).mockReturnValue(new Promise(() => {}));
     vi.mocked(getMonthlyReport).mockReturnValue(new Promise(() => {}));
 
-    const wrapper = mount(ReportView);
+    const { wrapper } = mountReport();
 
     expect(wrapper.text()).toContain('正在生成经营报告');
   });
 
   it('renders accessible error state when report API fails', async () => {
-    vi.mocked(getPeriods).mockResolvedValue(periods);
     vi.mocked(getMonthlyReport).mockRejectedValue(new Error('network down'));
 
-    const wrapper = mount(ReportView);
+    const { wrapper } = mountReport();
     await flushPromises();
 
     expect(wrapper.get('[role="alert"]').text()).toContain('经营报告生成失败');

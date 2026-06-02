@@ -1,24 +1,36 @@
 <script setup lang="ts">
+// Finance analysis view: subscribes to the global Pinia period store so it
+// stays in sync with the top-bar selector. The local PeriodSelector and
+// getPeriods() call have been removed in favor of the shared store.
 import { computed, onMounted, ref, watch } from 'vue';
+import { storeToRefs } from 'pinia';
 import { useRoute } from 'vue-router';
-import { getMetrics, getPeriods } from '../api/finance';
-import PeriodSelector from '../components/PeriodSelector.vue';
-import type { FinanceMetric, FinancePeriod } from '../types/finance';
+import { getMetrics } from '../api/finance';
+import { usePeriodStore } from '../stores/period';
+import type { FinanceMetric } from '../types/finance';
+
+// Fallback period id used when the store has not loaded periods yet
+// (e.g. isolated tests mounting this view alone).
+const DEFAULT_PERIOD_ID = 4;
 
 const route = useRoute();
-const periods = ref<FinancePeriod[]>([]);
-const selectedPeriodId = ref<number | null>(null);
+const periodStore = usePeriodStore();
+const { currentPeriodId } = storeToRefs(periodStore);
+
 const metrics = ref<FinanceMetric[]>([]);
 const loading = ref(true);
 const errorMessage = ref('');
 
 const highlight = computed(() => (route.query.highlight as string | undefined) ?? '');
 
+// Resolve the active period id with a safe fallback.
+function resolvePeriodId(): number {
+  return currentPeriodId.value ?? DEFAULT_PERIOD_ID;
+}
+
+// Load financial metric details for the active period.
 async function load() {
-  const id = selectedPeriodId.value;
-  if (id == null) {
-    return;
-  }
+  const id = resolvePeriodId();
   loading.value = true;
   errorMessage.value = '';
   try {
@@ -30,24 +42,15 @@ async function load() {
   }
 }
 
-onMounted(async () => {
-  try {
-    periods.value = await getPeriods();
-    const list = periods.value;
-    selectedPeriodId.value = (list.length ? list[list.length - 1] : undefined)?.id ?? 4;
-  } catch {
-    errorMessage.value = '无法加载期间。';
-    selectedPeriodId.value = 4;
-  }
-  await load();
+// Reload when the global period selector switches periods.
+watch(currentPeriodId, (next, prev) => {
+  if (next === prev) return;
+  void load();
 });
 
-watch(selectedPeriodId, (id, prev) => {
-  if (id != null && prev != null && id !== prev) {
-    void load();
-  }
-});
+onMounted(load);
 
+// Apply highlight class for the row matching the ?highlight= query param.
 function rowClass(code: string) {
   return highlight.value && highlight.value === code ? 'fin-row-highlight' : '';
 }
@@ -61,12 +64,6 @@ function rowClass(code: string) {
         <h1>财务指标明细</h1>
         <p class="muted-text">按期间查看内置示例数据中的核心指标，可与预算偏差、AI 分析交叉使用。</p>
       </div>
-      <PeriodSelector
-        v-if="periods.length && selectedPeriodId != null"
-        :periods="periods"
-        :model-value="selectedPeriodId"
-        @update:model-value="(id) => (selectedPeriodId = id)"
-      />
     </header>
 
     <section v-if="loading" class="state-card">加载中…</section>

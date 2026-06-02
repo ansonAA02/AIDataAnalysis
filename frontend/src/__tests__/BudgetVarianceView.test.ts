@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { describe, expect, it, vi } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BudgetVarianceView from '../views/BudgetVarianceView.vue';
 import type { BudgetExplanation, BudgetVariance } from '../types/finance';
 
@@ -9,6 +10,16 @@ vi.mock('../api/budget', () => ({
 }));
 
 import { getBudgetExplanation, getBudgetVariances } from '../api/budget';
+
+// Mount the budget view with a fresh Pinia instance so the period store is
+// isolated between tests. The view falls back to DEFAULT_PERIOD_ID = 4.
+function mountBudget() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  return mount(BudgetVarianceView, {
+    global: { plugins: [pinia] },
+  });
+}
 
 const variances: BudgetVariance[] = [
   {
@@ -43,11 +54,15 @@ const explanation: BudgetExplanation = {
 };
 
 describe('BudgetVarianceView', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('renders budget variance table and AI explanation', async () => {
     vi.mocked(getBudgetVariances).mockResolvedValue(variances);
     vi.mocked(getBudgetExplanation).mockResolvedValue(explanation);
 
-    const wrapper = mount(BudgetVarianceView);
+    const wrapper = mountBudget();
     await flushPromises();
 
     expect(getBudgetVariances).toHaveBeenCalledWith(4);
@@ -65,7 +80,7 @@ describe('BudgetVarianceView', () => {
     vi.mocked(getBudgetVariances).mockResolvedValue([]);
     vi.mocked(getBudgetExplanation).mockResolvedValue(explanation);
 
-    const wrapper = mount(BudgetVarianceView);
+    const wrapper = mountBudget();
     await flushPromises();
 
     expect(wrapper.text()).toContain('暂无预算偏差数据');
@@ -75,7 +90,7 @@ describe('BudgetVarianceView', () => {
     vi.mocked(getBudgetVariances).mockReturnValue(new Promise(() => {}));
     vi.mocked(getBudgetExplanation).mockReturnValue(new Promise(() => {}));
 
-    const wrapper = mount(BudgetVarianceView);
+    const wrapper = mountBudget();
 
     expect(wrapper.text()).toContain('正在加载预算偏差');
   });
@@ -84,7 +99,7 @@ describe('BudgetVarianceView', () => {
     vi.mocked(getBudgetVariances).mockRejectedValue(new Error('network down'));
     vi.mocked(getBudgetExplanation).mockResolvedValue(explanation);
 
-    const wrapper = mount(BudgetVarianceView);
+    const wrapper = mountBudget();
     await flushPromises();
 
     expect(wrapper.get('[role="alert"]').text()).toContain('预算偏差表加载失败');
@@ -94,7 +109,7 @@ describe('BudgetVarianceView', () => {
     vi.mocked(getBudgetVariances).mockResolvedValue(variances);
     vi.mocked(getBudgetExplanation).mockRejectedValue(new Error('ai down'));
 
-    const wrapper = mount(BudgetVarianceView);
+    const wrapper = mountBudget();
     await flushPromises();
 
     expect(wrapper.get('[role="status"]').text()).toContain('AI 偏差解释暂不可用');

@@ -1,24 +1,67 @@
 <script setup lang="ts">
+// Floating AI assistant: subscribes to the global Pinia period store so the
+// chat is always scoped to whichever period the user picked in the top bar.
+// Now also persists each Q&A pair to the backend so users can revisit past
+// sessions through a History drawer (list / favorite / delete / reload).
 import { ref, nextTick, watch } from 'vue';
-import { Bot, X, Sparkles, Send, Loader2 } from 'lucide-vue-next';
-import { askAi } from '../api/ai';
+import { storeToRefs } from 'pinia';
+import { Bot, X, Sparkles, Send, Loader2, History, Star, Trash2, Plus } from 'lucide-vue-next';
+import {
+  appendConversationTurn,
+  deleteConversation,
+  getConversationDetail,
+  listConversations,
+  streamAiAnswer,
+  toggleConversationFavorite,
+} from '../api/ai';
+import { usePeriodStore } from '../stores/period';
+import type { AiConversationSummary } from '../types/finance';
+
+type ChatMessage = {
+  role: 'user' | 'ai';
+  text: string;
+};
+
+// Fallback period id used only when the store has no period yet.
+const DEFAULT_PERIOD_ID = 4;
+const ASSISTANT_GREETING =
+  '你好！我是你的 AI 财务经营助手。你可以向我询问关于收入、成本、预算偏差或任何经营分析的问题。';
+const STREAM_ERROR_MESSAGE = '抱歉，暂时无法回答您的问题，请检查网络或后端配置。';
+const STREAM_INTERRUPTED_MESSAGE = '\n\n(连接中断)';
+
+const periodStore = usePeriodStore();
+const { currentPeriodId } = storeToRefs(periodStore);
+
+// Resolve the active period id with a safe fallback.
+function resolvePeriodId(): number {
+  return currentPeriodId.value ?? DEFAULT_PERIOD_ID;
+}
 
 const isOpen = ref(false);
 const query = ref('');
 const isLoading = ref(false);
-const chatHistory = ref<{ role: 'user' | 'ai'; text: string }[]>([]);
+const chatHistory = ref<ChatMessage[]>([]);
 const messagesContainer = ref<HTMLElement | null>(null);
 
+// History drawer state: open flag, filter, list cache, and active session id.
+const isHistoryOpen = ref(false);
+const showFavoritesOnly = ref(false);
+const conversations = ref<AiConversationSummary[]>([]);
+const isHistoryLoading = ref(false);
+const activeConversationId = ref<number | null>(null);
+
+// Seed the assistant with a greeting when the panel opens for the first time.
 const toggleAssistant = () => {
   isOpen.value = !isOpen.value;
   if (isOpen.value && chatHistory.value.length === 0) {
     chatHistory.value.push({
       role: 'ai',
-      text: '你好！我是你的 AI 财务经营助手。你可以向我询问关于收入、成本、预算偏差或任何经营分析的问题。'
+      text: ASSISTANT_GREETING
     });
   }
 };
 
+// Keep the newest chat message visible after the DOM updates.
 const scrollToBottom = () => {
   nextTick(() => {
     if (messagesContainer.value) {
@@ -29,98 +72,164 @@ const scrollToBottom = () => {
 
 watch(() => chatHistory.value.length, scrollToBottom);
 
-const askQuestion = async (text: string) => {
-  // Prevent empty or concurrent submissions
-  if (!text.trim() || isLoading.value) return;
-  
-  const userText = text.trim();
-  query.value = '';
-  
-  // Add user message to chat history
-  chatHistory.value.push({ role: 'user', text: userText });
-  isLoading.value = true;
-  
-  try {
-    const aiMessageIndex = chatHistory.value.length;
-    // Add empty AI message placeholder
-    chatHistory.value.push({ role: 'ai', text: '' });
-    
-    // Determine API base URL
-    const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080').replace(/\/$/, '');
-    
-    // Fetch SSE stream from backend
-    const response = await fetch(`${apiBaseUrl}/api/ai/ask/stream`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ periodId: 4, question: userText })
-    });
-
-    // Check for HTTP errors
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    // Get stream reader
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error('No stream reader available');
-    
-    isLoading.value = false; // Hide spinner once stream starts
-    const decoder = new TextDecoder('utf-8');
-    let buffer = '';
-    let eventData = '';
-    
-    // Read stream chunks continuously
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      
-      // Decode chunk and split into lines
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop() || ''; // Keep incomplete line in buffer
-      
-      // Process each line for SSE data
-      for (const line of lines) {
-        if (line.startsWith('data:')) {
-          let text = line.substring(5);
-          // Remove single leading space if present
-          if (text.startsWith(' ')) text = text.substring(1);
-          if (eventData !== '') eventData += '\n';
-          eventData += text;
-        } else if (line === '') {
-          // Empty line indicates end of SSE event
-          if (eventData !== '') {
-            chatHistory.value[aiMessageIndex].text += eventData;
-            eventData = '';
-            scrollToBottom();
-          }
-        }
-      }
-    }
-  } catch (err) {
-    console.error('AI Stream Error:', err);
-    // Handle network or stream errors
-    const aiMessageIndex = chatHistory.value.length - 1;
-    if (chatHistory.value[aiMessageIndex] && chatHistory.value[aiMessageIndex].text === '') {
-       chatHistory.value[aiMessageIndex].text = '抱歉，暫時無法回答您的問題，請檢查網絡或後端配置。';
-    } else {
-       chatHistory.value.push({ role: 'ai', text: '\n\n*(連接中斷)*' });
-    }
-  } finally {
-    // Ensure loading state is reset
-    isLoading.value = false;
+// Append streamed text to the placeholder AI message.
+const appendAiChunk = (messageIndex: number, chunk: string) => {
+  const targetMessage = chatHistory.value[messageIndex];
+  if (targetMessage) {
+    targetMessage.text += chunk;
   }
 };
 
+// Replace an empty placeholder with a readable fallback error.
+const applyAiErrorState = (messageIndex: number) => {
+  const targetMessage = chatHistory.value[messageIndex];
+  if (targetMessage && targetMessage.text === '') {
+    targetMessage.text = STREAM_ERROR_MESSAGE;
+    return;
+  }
+
+  chatHistory.value.push({ role: 'ai', text: STREAM_INTERRUPTED_MESSAGE });
+};
+
+// Submit a chat question through the shared AI streaming client.
+const askQuestion = async (text: string) => {
+  if (!text.trim() || isLoading.value) return;
+
+  const userText = text.trim();
+  query.value = '';
+
+  chatHistory.value.push({ role: 'user', text: userText });
+  isLoading.value = true;
+  const aiMessageIndex = chatHistory.value.length;
+  chatHistory.value.push({ role: 'ai', text: '' });
+
+  let assistantText = '';
+  let streamFailed = false;
+
+  try {
+    await streamAiAnswer(
+      { periodId: resolvePeriodId(), question: userText },
+      (chunk) => {
+        isLoading.value = false;
+        assistantText += chunk;
+        appendAiChunk(aiMessageIndex, chunk);
+        scrollToBottom();
+      },
+    );
+  } catch (err) {
+    console.error('AI Stream Error:', err);
+    streamFailed = true;
+    applyAiErrorState(aiMessageIndex);
+  } finally {
+    isLoading.value = false;
+  }
+
+  // Persist the turn so users can revisit it later (skip on hard failure).
+  if (!streamFailed && assistantText.trim().length > 0) {
+    try {
+      const detail = await appendConversationTurn({
+        conversationId: activeConversationId.value,
+        periodId: resolvePeriodId(),
+        question: userText,
+        answer: assistantText,
+      });
+      activeConversationId.value = detail.id;
+    } catch (saveErr) {
+      console.warn('Failed to save AI conversation turn:', saveErr);
+    }
+  }
+};
+
+// Submit the current textarea value.
 const sendQuery = () => {
   askQuestion(query.value);
 };
 
+// Reuse the same submit flow for shortcut prompts.
 const useShortcut = (shortcut: string) => {
   askQuestion(shortcut);
 };
+
+// Open the history drawer and refresh the list of stored conversations.
+async function openHistory() {
+  isHistoryOpen.value = true;
+  await refreshHistory();
+}
+
+// Close the history drawer without affecting the active chat session.
+function closeHistory() {
+  isHistoryOpen.value = false;
+}
+
+// Refresh the conversation list using the current favorites filter.
+async function refreshHistory() {
+  isHistoryLoading.value = true;
+  try {
+    conversations.value = await listConversations(showFavoritesOnly.value);
+  } catch (err) {
+    console.warn('Failed to load AI conversation history:', err);
+    conversations.value = [];
+  } finally {
+    isHistoryLoading.value = false;
+  }
+}
+
+// Switch between "all" and "favorites only" filter modes.
+async function setFavoritesFilter(value: boolean) {
+  if (showFavoritesOnly.value === value) return;
+  showFavoritesOnly.value = value;
+  await refreshHistory();
+}
+
+// Reset the chat panel to a fresh, unsaved session.
+function startNewConversation() {
+  activeConversationId.value = null;
+  chatHistory.value = [{ role: 'ai', text: ASSISTANT_GREETING }];
+  closeHistory();
+}
+
+// Load a stored conversation back into the chat panel.
+async function loadConversation(id: number) {
+  try {
+    const detail = await getConversationDetail(id);
+    activeConversationId.value = detail.id;
+    chatHistory.value = detail.messages.map((message) => ({
+      role: message.role === 'assistant' ? 'ai' : 'user',
+      text: message.content,
+    }));
+    closeHistory();
+  } catch (err) {
+    console.warn('Failed to load AI conversation:', err);
+  }
+}
+
+// Toggle the favorited flag on a conversation row.
+async function favoriteConversation(summary: AiConversationSummary) {
+  try {
+    const updated = await toggleConversationFavorite(summary.id);
+    const index = conversations.value.findIndex((item) => item.id === summary.id);
+    if (showFavoritesOnly.value && !updated.favorited) {
+      conversations.value.splice(index, 1);
+    } else if (index >= 0) {
+      conversations.value[index] = updated;
+    }
+  } catch (err) {
+    console.warn('Failed to toggle favorite:', err);
+  }
+}
+
+// Delete a conversation and refresh the list; reset active session if needed.
+async function removeConversation(summary: AiConversationSummary) {
+  try {
+    await deleteConversation(summary.id);
+    conversations.value = conversations.value.filter((item) => item.id !== summary.id);
+    if (activeConversationId.value === summary.id) {
+      startNewConversation();
+    }
+  } catch (err) {
+    console.warn('Failed to delete conversation:', err);
+  }
+}
 
 const shortcuts = [
   '本月最大的预算偏差是什么？',
@@ -150,10 +259,98 @@ const shortcuts = [
             <Bot :size="20" />
             <span>AI 财务助手</span>
           </div>
-          <button class="ai-panel-close" @click="toggleAssistant">
-            <X :size="18" />
-          </button>
+          <div class="ai-panel-header-actions">
+            <button
+              class="ai-panel-icon-btn"
+              type="button"
+              :title="isHistoryOpen ? '关闭历史' : '查看对话历史'"
+              :aria-pressed="isHistoryOpen"
+              @click="isHistoryOpen ? closeHistory() : openHistory()"
+            >
+              <History :size="16" />
+            </button>
+            <button
+              class="ai-panel-icon-btn"
+              type="button"
+              title="开启新对话"
+              @click="startNewConversation"
+            >
+              <Plus :size="16" />
+            </button>
+            <button class="ai-panel-close" @click="toggleAssistant" title="关闭助手">
+              <X :size="18" />
+            </button>
+          </div>
         </div>
+
+        <!-- History drawer overlays the chat area while open. -->
+        <transition name="slide-fade">
+          <div v-if="isHistoryOpen" class="ai-history-drawer">
+            <div class="ai-history-filters">
+              <button
+                class="ai-history-tab"
+                :class="{ 'ai-history-tab--active': !showFavoritesOnly }"
+                type="button"
+                @click="setFavoritesFilter(false)"
+              >
+                全部
+              </button>
+              <button
+                class="ai-history-tab"
+                :class="{ 'ai-history-tab--active': showFavoritesOnly }"
+                type="button"
+                @click="setFavoritesFilter(true)"
+              >
+                <Star :size="12" />
+                收藏
+              </button>
+            </div>
+
+            <div v-if="isHistoryLoading" class="ai-history-empty">加载中…</div>
+            <div v-else-if="conversations.length === 0" class="ai-history-empty">
+              {{ showFavoritesOnly ? '还没有收藏的对话' : '还没有历史对话' }}
+            </div>
+            <ul v-else class="ai-history-list">
+              <li
+                v-for="conversation in conversations"
+                :key="conversation.id"
+                class="ai-history-item"
+                :class="{ 'ai-history-item--active': conversation.id === activeConversationId }"
+              >
+                <button
+                  type="button"
+                  class="ai-history-item-main"
+                  @click="loadConversation(conversation.id)"
+                >
+                  <div class="ai-history-item-title">{{ conversation.title }}</div>
+                  <div class="ai-history-item-preview">{{ conversation.preview }}</div>
+                  <div class="ai-history-item-meta">
+                    {{ conversation.messageCount }} 条 · {{ new Date(conversation.updatedAt).toLocaleString('zh-CN') }}
+                  </div>
+                </button>
+                <div class="ai-history-item-actions">
+                  <button
+                    type="button"
+                    class="ai-history-item-action"
+                    :class="{ 'ai-history-item-action--on': conversation.favorited }"
+                    :title="conversation.favorited ? '取消收藏' : '收藏'"
+                    @click.stop="favoriteConversation(conversation)"
+                  >
+                    <Star :size="14" />
+                  </button>
+                  <button
+                    type="button"
+                    class="ai-history-item-action ai-history-item-action--danger"
+                    title="删除"
+                    @click.stop="removeConversation(conversation)"
+                  >
+                    <Trash2 :size="14" />
+                  </button>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </transition>
         
         <div class="ai-panel-messages" ref="messagesContainer">
           <div 
@@ -166,7 +363,7 @@ const shortcuts = [
               <Bot v-if="msg.role === 'ai'" :size="16" />
               <span v-else>ME</span>
             </div>
-            <div class="chat-message-bubble" v-html="msg.text.replace(/\n/g, '<br>')"></div>
+            <div class="chat-message-bubble">{{ msg.text }}</div>
           </div>
           
           <div v-if="isLoading" class="chat-message chat-message--ai">
@@ -350,6 +547,8 @@ const shortcuts = [
   border-radius: 12px;
   font-size: 14px;
   line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .chat-message--ai .chat-message-bubble {
@@ -456,5 +655,181 @@ const shortcuts = [
     width: calc(100vw - 32px);
     right: -16px;
   }
+}
+
+/* History drawer + header action buttons. */
+.ai-panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-panel-icon-btn {
+  background: none;
+  border: none;
+  color: var(--color-muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+}
+
+.ai-panel-icon-btn:hover,
+.ai-panel-icon-btn[aria-pressed='true'] {
+  background: var(--color-accent-purple-bg);
+  color: var(--color-accent-purple);
+}
+
+.ai-history-drawer {
+  position: absolute;
+  top: 56px;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border);
+  z-index: 5;
+}
+
+.ai-history-filters {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ai-history-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-soft);
+  color: var(--color-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-history-tab--active {
+  background: var(--color-accent-purple-bg);
+  color: var(--color-accent-purple);
+  border-color: var(--color-accent-purple);
+}
+
+.ai-history-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--color-muted);
+  font-size: 13px;
+}
+
+.ai-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.ai-history-item {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  border: 1px solid transparent;
+}
+
+.ai-history-item:hover {
+  background: var(--color-surface-soft);
+}
+
+.ai-history-item--active {
+  border-color: var(--color-accent-purple);
+  background: var(--color-accent-purple-bg);
+}
+
+.ai-history-item-main {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px 10px;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.ai-history-item-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--color-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-history-item-preview {
+  font-size: 12px;
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-history-item-meta {
+  font-size: 11px;
+  color: var(--color-muted);
+  margin-top: 2px;
+}
+
+.ai-history-item-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+}
+
+.ai-history-item-action {
+  background: none;
+  border: none;
+  color: var(--color-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+}
+
+.ai-history-item-action:hover {
+  background: var(--color-border);
+  color: var(--color-ink);
+}
+
+.ai-history-item-action--on {
+  color: #f59e0b;
+}
+
+.ai-history-item-action--danger:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.slide-fade-enter-active,
+.slide-fade-leave-active {
+  transition: all 0.18s ease;
+}
+
+.slide-fade-enter-from,
+.slide-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 </style>

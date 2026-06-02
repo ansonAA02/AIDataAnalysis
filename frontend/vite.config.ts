@@ -18,6 +18,12 @@ const config = {
   server: {
     host: '0.0.0.0',
     port: 5173,
+    // OneDrive + Docker bind mount on Windows blocks inotify events.
+    // Use polling so Vite picks up newly created/edited files inside the container.
+    watch: {
+      usePolling: true,
+      interval: 300,
+    },
   },
   test: {
     environment: 'jsdom',

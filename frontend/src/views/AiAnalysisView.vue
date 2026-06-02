@@ -1,11 +1,25 @@
 <script setup lang="ts">
+// AI analysis view: reads the active period from the global Pinia store so
+// every AI question is scoped to whichever period the user picked in the
+// top-bar selector.
 import { ref } from 'vue';
-import { askAi } from '../api/ai';
+import { storeToRefs } from 'pinia';
+import { streamAiAnswer } from '../api/ai';
 import AiAnswerPanel from '../components/AiAnswerPanel.vue';
 import QuestionShortcutList from '../components/QuestionShortcutList.vue';
+import { usePeriodStore } from '../stores/period';
 import type { AiAnswer } from '../types/finance';
 
+// Fallback period id for isolated test mounts without a preloaded store.
 const DEFAULT_PERIOD_ID = 4;
+
+const periodStore = usePeriodStore();
+const { currentPeriodId } = storeToRefs(periodStore);
+
+// Resolve the active period id with a safe fallback.
+function resolvePeriodId(): number {
+  return currentPeriodId.value ?? DEFAULT_PERIOD_ID;
+}
 
 const shortcutQuestions = [
   '为什么本月利润下降？',
@@ -30,7 +44,6 @@ async function submitQuestion(selectedQuestion = question.value) {
   errorMessage.value = '';
 
   try {
-    // 預留一個空的 AI Answer 對象來接收串流數據
     answer.value = {
       conclusion: '',
       evidence: '',
@@ -38,57 +51,19 @@ async function submitQuestion(selectedQuestion = question.value) {
       risk: '',
       recommendation: ''
     };
-    
-    const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080').replace(/\/$/, '');
-    
-    const response = await fetch(`${apiBaseUrl}/api/ai/ask/stream`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ periodId: DEFAULT_PERIOD_ID, question: normalizedQuestion })
-    });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error('No stream reader available');
-    
-    loading.value = false; // 開始接收數據後解除 loading 狀態
-    const decoder = new TextDecoder('utf-8');
-    let buffer = '';
-    let eventData = '';
-    
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop() || '';
-      
-      for (const line of lines) {
-        if (line.startsWith('data:')) {
-          let text = line.substring(5);
-          if (text.startsWith(' ')) text = text.substring(1);
-          if (eventData !== '') eventData += '\n';
-          eventData += text;
-        } else if (line === '') {
-          if (eventData !== '') {
-            // 將收到的串流文字簡單地追加到 conclusion 中展示（因為串流是純文本 Markdown）
-            if (answer.value) {
-              answer.value.conclusion += eventData;
-            }
-            eventData = '';
-          }
+    await streamAiAnswer(
+      { periodId: resolvePeriodId(), question: normalizedQuestion },
+      (chunk) => {
+        loading.value = false;
+        if (answer.value) {
+          answer.value.conclusion += chunk;
         }
       }
-    }
+    );
   } catch (err) {
     console.error('AI Stream Error:', err);
-    errorMessage.value = 'AI 分析請求失敗，請檢查網絡或後端配置。';
+    errorMessage.value = 'AI 分析请求失败，请检查网络或后端配置。';
     answer.value = null;
   } finally {
     loading.value = false;

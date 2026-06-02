@@ -1,13 +1,22 @@
 <script setup lang="ts">
+// Report view: subscribes to the global Pinia period store so the monthly
+// report regenerates whenever the user switches period from the top bar.
+// The local PeriodSelector has been removed.
 import { computed, onMounted, ref, watch } from 'vue';
-import { getPeriods } from '../api/finance';
+import { storeToRefs } from 'pinia';
 import { getMonthlyReport } from '../api/report';
-import PeriodSelector from '../components/PeriodSelector.vue';
 import ReportSection from '../components/ReportSection.vue';
-import type { FinancePeriod, Report } from '../types/finance';
+import { usePeriodStore } from '../stores/period';
+import { exportReportToExcel } from '../utils/exportExcel';
+import { buildPrintFilename, printAsPdf } from '../utils/printPdf';
+import type { Report } from '../types/finance';
 
-const periods = ref<FinancePeriod[]>([]);
-const selectedPeriodId = ref<number | null>(null);
+// Fallback period id for isolated test mounts.
+const DEFAULT_PERIOD_ID = 4;
+
+const periodStore = usePeriodStore();
+const { currentPeriodId } = storeToRefs(periodStore);
+
 const report = ref<Report | null>(null);
 const loading = ref(true);
 const errorMessage = ref('');
@@ -15,26 +24,14 @@ const errorMessage = ref('');
 const executiveSummary = computed(() => report.value?.sections.find((section) => section.code === 'OVERVIEW'));
 const reportProgress = computed(() => (report.value ? `${report.value.sections.length} 个章节` : '待生成'));
 
-async function loadInitialReport() {
-  loading.value = true;
-  errorMessage.value = '';
-
-  try {
-    periods.value = await getPeriods();
-    selectedPeriodId.value = periods.value[0]?.id ?? 4;
-    await loadReport(selectedPeriodId.value);
-  } catch {
-    errorMessage.value = '经营报告生成失败，请稍后重试。';
-  } finally {
-    loading.value = false;
-  }
+// Resolve the active period id with a safe fallback.
+function resolvePeriodId(): number {
+  return currentPeriodId.value ?? DEFAULT_PERIOD_ID;
 }
 
-async function loadReport(periodId: number | null) {
-  if (periodId == null) {
-    return;
-  }
-
+// Fetch the monthly report for the active period.
+async function loadReport() {
+  const periodId = resolvePeriodId();
   loading.value = true;
   errorMessage.value = '';
 
@@ -47,13 +44,26 @@ async function loadReport(periodId: number | null) {
   }
 }
 
-watch(selectedPeriodId, (periodId, previousPeriodId) => {
-  if (previousPeriodId != null && periodId !== previousPeriodId) {
-    void loadReport(periodId);
-  }
+// Reload when the global period changes.
+watch(currentPeriodId, (next, prev) => {
+  if (next === prev) return;
+  void loadReport();
 });
 
-onMounted(loadInitialReport);
+// Export the current report to an .xlsx file (one sheet per section).
+function handleExportExcel() {
+  if (!report.value) return;
+  exportReportToExcel(report.value);
+}
+
+// Trigger native browser print dialog so user can save the report as PDF.
+function handleExportPdf() {
+  if (!report.value) return;
+  const filename = buildPrintFilename('经营报告', report.value.periodLabel ?? '');
+  printAsPdf(filename);
+}
+
+onMounted(loadReport);
 </script>
 
 <template>
@@ -71,10 +81,27 @@ onMounted(loadInitialReport);
     </section>
 
     <section class="report-toolbar panel-card" style="margin-bottom: 24px;">
-      <PeriodSelector v-model="selectedPeriodId" :periods="periods" />
       <div class="report-unit">
         <span>报告单位</span>
         <strong>{{ report?.unit ?? '万元' }}</strong>
+      </div>
+      <div class="report-export export-actions">
+        <button
+          type="button"
+          class="export-btn"
+          :disabled="!report || loading"
+          @click="handleExportExcel"
+        >
+          导出 Excel
+        </button>
+        <button
+          type="button"
+          class="export-btn export-btn--primary"
+          :disabled="!report || loading"
+          @click="handleExportPdf"
+        >
+          导出 PDF
+        </button>
       </div>
     </section>
 
@@ -178,5 +205,43 @@ onMounted(loadInitialReport);
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.report-export {
+  display: flex;
+  gap: 12px;
+}
+
+.export-btn {
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-ink);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.export-btn:hover:not(:disabled) {
+  background: var(--color-surface-alt, #f3f4f6);
+  border-color: var(--color-ink);
+}
+
+.export-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.export-btn--primary {
+  color: #fff;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.export-btn--primary:hover:not(:disabled) {
+  background: var(--color-primary-dark, #1d4ed8);
+  border-color: var(--color-primary-dark, #1d4ed8);
 }
 </style>

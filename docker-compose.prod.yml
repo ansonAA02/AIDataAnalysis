@@ -31,7 +31,7 @@ services:
     container_name: ai-finance-backend-prod
     restart: always
     environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-ai_finance}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-ai_finance}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf8&connectionCollation=utf8mb4_unicode_ci
       SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-ai_finance}
       SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-ai_finance_password}
       SPRING_DATA_REDIS_HOST: redis

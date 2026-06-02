@@ -69,6 +69,21 @@ export interface RiskAlert {
   message: string;
 }
 
+// Workflow status of a persisted risk alert event.
+export type AlertStatus = 'NEW' | 'ACKNOWLEDGED' | 'RESOLVED' | 'IGNORED';
+
+// Persistent risk alert event row returned from /api/alerts.
+export interface RiskAlertEvent {
+  id: number;
+  periodId: number;
+  alertType: RiskType;
+  alertLevel: RiskLevel;
+  message: string;
+  status: AlertStatus;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
 export interface AiAnswer {
   conclusion: string;
   evidence: string;
@@ -80,6 +95,39 @@ export interface AiAnswer {
 export interface AiAskRequest {
   periodId: number;
   question: string;
+}
+
+// Single message inside a stored AI conversation history record.
+export interface AiHistoryMessage {
+  id: number;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+}
+
+// Lightweight conversation summary used by the history list.
+export interface AiConversationSummary {
+  id: number;
+  title: string;
+  periodId: number | null;
+  favorited: boolean;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+  preview: string;
+}
+
+// Full conversation detail returned when a session is opened.
+export interface AiConversationDetail extends AiConversationSummary {
+  messages: AiHistoryMessage[];
+}
+
+// Payload used to append a Q&A turn to a (possibly new) conversation.
+export interface AppendTurnPayload {
+  conversationId: number | null;
+  periodId: number;
+  question: string;
+  answer: string;
 }
 
 export interface BudgetVariance {
